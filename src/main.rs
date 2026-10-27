@@ -8,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 use std::{env, thread};
 
 const PAGE: &str = include_str!("index.html");
@@ -33,13 +33,28 @@ struct Job {
 
 struct App {
     out: PathBuf,
+    port: String,
     jobs: Mutex<Vec<Job>>,
+}
+
+impl App {
+    /// Only our own page may call us: blocks other websites (CSRF) and DNS rebinding.
+    fn trusted(&self, req: &Request) -> bool {
+        let hosts = [
+            format!("127.0.0.1:{}", self.port),
+            format!("localhost:{}", self.port),
+        ];
+        let header = |k| req.headers.get(k).map(String::as_str);
+        header("host").is_some_and(|h| hosts.iter().any(|ok| ok == h))
+            && header("origin").is_none_or(|o| hosts.iter().any(|ok| o == format!("http://{ok}")))
+    }
 }
 
 struct Request {
     method: String,
     path: String,
-    range: Option<String>,
+    /// Header names in lower case.
+    headers: HashMap<String, String>,
     /// Query string and form body fields together.
     form: HashMap<String, String>,
 }
@@ -64,6 +79,7 @@ fn main() -> io::Result<()> {
 
     let app = Arc::new(App {
         out,
+        port,
         jobs: Mutex::default(),
     });
     for stream in listener.incoming().flatten() {
@@ -74,11 +90,21 @@ fn main() -> io::Result<()> {
 }
 
 fn handle(stream: &TcpStream, app: &Arc<App>) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     let req = read_request(stream)?;
-    if let ("GET", Some(name)) = (req.method.as_str(), req.path.strip_prefix("/media/")) {
-        return serve_media(stream, &app.out, &decode(name), req.range.as_deref());
+    if !app.trusted(&req) {
+        return reply(stream, (403, TEXT, "forbidden".into()));
     }
-    let (status, ctype, body) = route(&req, app).unwrap_or_else(|e| (400, TEXT, e));
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", path) if path.starts_with("/media/") => {
+            let range = req.headers.get("range").map(String::as_str);
+            serve_media(stream, &app.out, &decode(&path["/media/".len()..]), range)
+        }
+        _ => reply(stream, route(&req, app).unwrap_or_else(|e| (400, TEXT, e))),
+    }
+}
+
+fn reply(stream: &TcpStream, (status, ctype, body): Reply) -> io::Result<()> {
     write_head(stream, status, ctype, body.len() as u64, "")?;
     let mut w = stream;
     w.write_all(body.as_bytes())
@@ -93,20 +119,20 @@ fn read_request(stream: &TcpStream) -> io::Result<Request> {
     let target = parts.next().unwrap_or("");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
-    let (mut len, mut range) = (0, None);
+    let mut headers = HashMap::new();
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 || header.trim().is_empty() {
             break;
         }
         if let Some((k, v)) = header.split_once(':') {
-            if k.eq_ignore_ascii_case("content-length") {
-                len = v.trim().parse().unwrap_or(0);
-            } else if k.eq_ignore_ascii_case("range") {
-                range = Some(v.trim().to_string());
-            }
+            headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
         }
     }
+    let len: usize = headers
+        .get("content-length")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(0);
     let mut body = vec![0; len.min(1 << 16)];
     reader.read_exact(&mut body)?;
 
@@ -115,7 +141,7 @@ fn read_request(stream: &TcpStream) -> io::Result<Request> {
     Ok(Request {
         method,
         path: path.to_string(),
-        range,
+        headers,
         form,
     })
 }
@@ -148,13 +174,16 @@ fn write_head(
     extra: &str,
 ) -> io::Result<()> {
     let mut w = stream;
-    write!(w, "HTTP/1.1 {status} \r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\n{extra}Connection: close\r\n\r\n")
+    write!(
+        w,
+        "HTTP/1.1 {status} \r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\n{extra}Connection: close\r\n\r\n"
+    )
 }
 
 /// Stream a library video, honouring Range requests so the player can seek.
 fn serve_media(stream: &TcpStream, out: &Path, name: &str, range: Option<&str>) -> io::Result<()> {
     let Ok(path) = library_file(out, name) else {
-        return write_head(stream, 404, TEXT, 0, "");
+        return reply(stream, (404, TEXT, "not found".into()));
     };
     let mut file = File::open(&path)?;
     let size = file.metadata()?.len();
