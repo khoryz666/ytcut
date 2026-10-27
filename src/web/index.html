@@ -16,7 +16,7 @@
   </a>
   <nav class="tabs">
     <a href="#download">Download</a>
-    <a href="#library">Library</a>
+    <a href="#playlist">Playlist</a>
   </nav>
 </header>
 
@@ -57,31 +57,38 @@
     <ul class="card" id="jobs" hidden></ul>
   </section>
 
-  <section id="library" hidden>
-    <div class="card" id="playlist" hidden>
+  <section id="playlist" hidden>
+    <!-- The library slides out from the left edge on hover. -->
+    <aside class="sidebar" id="library" aria-label="Library">
+      <div class="sidebar-body">
+        <div class="row between">
+          <h2>Library</h2>
+          <span class="hint" id="library-count"></span>
+        </div>
+        <input id="search" type="search" placeholder="Search your songs" aria-label="Search">
+        <div class="row between">
+          <label class="select-all"><input id="all" type="checkbox"> Select all</label>
+          <button class="primary" id="play-selected" disabled>▶ Play selected</button>
+        </div>
+        <ul id="songs"></ul>
+        <p class="hint" id="empty"></p>
+        <p class="error" id="lib-error"></p>
+        <p class="hint">Click a song to play it. ➕ adds it to the playlist.</p>
+      </div>
+      <button class="sidebar-tab" id="library-tab" type="button" aria-label="Library">
+        <span aria-hidden="true">🎵</span>
+        <span class="vertical">Library</span>
+      </button>
+    </aside>
+    <div class="card" id="playlist-card">
       <div class="playlist-head">
         <h2>Playlist</h2>
         <p class="hint" id="playlist-info"></p>
       </div>
-      <ol id="queue"></ol>
-    </div>
-    <div class="card">
-      <button class="tray-toggle" id="library-toggle" aria-expanded="false" aria-controls="library-body" hidden>
-        <span>🎵 Add songs from your library</span>
-        <span class="hint" id="library-count"></span>
-        <span class="chevron" aria-hidden="true">▾</span>
-      </button>
-      <div id="library-body">
-        <div class="row">
-          <input id="search" type="search" placeholder="Search your songs" aria-label="Search">
-          <button class="primary" id="play-selected" disabled>▶ Play selected</button>
-        </div>
-        <label class="select-all"><input id="all" type="checkbox"> Select all</label>
-        <ul id="songs"></ul>
-        <p class="hint" id="empty"></p>
-        <p class="error" id="lib-error"></p>
-        <p class="hint center">Click a song to play it. Use ➕ to add it to the playlist.</p>
-      </div>
+      <p class="hint" id="playlist-empty">
+        Your playlist is empty. Hover <strong>🎵 Library</strong> on the left, then click a song or use ➕.
+      </p>
+      <ol id="queue" hidden></ol>
     </div>
   </section>
 </main>
@@ -110,7 +117,7 @@
     <div class="controls">
       <button class="icon" id="repeat" aria-pressed="false" title="Repeat this song" aria-label="Repeat this song">🔂</button>
       <button class="icon" id="shuffle" aria-pressed="false" title="Shuffle" aria-label="Shuffle">🔀</button>
-      <a class="icon" id="show-queue" href="#library" title="Playlist" aria-label="Playlist">☰</a>
+      <a class="icon" id="show-queue" href="#playlist" title="Playlist" aria-label="Playlist">☰</a>
       <button class="icon" id="show-video" aria-pressed="false" title="Show video" aria-label="Show video">🎬</button>
       <button class="icon" id="stop" title="Stop" aria-label="Stop">✕</button>
     </div>

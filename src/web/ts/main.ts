@@ -4,12 +4,12 @@ import { loadFiles } from './library.js';
 import { pollJobs } from './download.js';
 
 function showTab() {
-  const tab = location.hash === '#library' ? 'library' : 'download';
-  for (const id of ['download', 'library']) $('#' + id).hidden = id !== tab;
+  const tab = location.hash === '#playlist' ? 'playlist' : 'download';
+  for (const id of ['download', 'playlist']) $('#' + id).hidden = id !== tab;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('.tabs a')) {
     a.toggleAttribute('aria-current', a.hash === '#' + tab);
   }
-  if (tab === 'library') loadFiles();
+  if (tab === 'playlist') loadFiles();
 }
 
 window.onhashchange = showTab;

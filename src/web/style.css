@@ -111,28 +111,29 @@ progress { width: 8rem; accent-color: var(--accent); }
 }
 
 /* ---------- library: playlist ---------- */
+h2 { margin: 0; font-size: 1.05rem; letter-spacing: -.01em; }
+#playlist-card { gap: .55rem; padding: 1rem 1rem .75rem; }
 .playlist-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
-.playlist-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.01em; }
-#queue { display: grid; gap: .15rem; margin: 0; padding: 0; list-style: none; }
+#queue { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .track {
-  position: relative; display: flex; align-items: center; gap: .7rem;
-  padding: .55rem .7rem; border-radius: 10px; transition: background .15s;
+  position: relative; display: flex; align-items: center; gap: .55rem;
+  padding: .3rem .55rem; border-radius: 8px; font-size: .95rem; transition: background .15s;
 }
 .track:hover { background: var(--bg); }
 .track.current { background: var(--accent-soft); }
 .track .grip {
-  cursor: grab; color: var(--muted); font-size: 1.15rem; line-height: 1; user-select: none;
-  padding: .15rem .2rem; border-radius: 6px;
+  cursor: grab; color: var(--muted); font-size: 1rem; line-height: 1; user-select: none;
+  padding: .1rem .15rem; border-radius: 5px;
 }
 .track:hover .grip { color: var(--accent); background: var(--card); }
 .track .grip:active { cursor: grabbing; }
 .track .index {
-  width: 1.6rem; text-align: center; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums;
+  width: 1.3rem; text-align: center; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums;
 }
 .track .name { flex: 1; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; font-weight: 500; }
 .track .name:hover { color: var(--accent); }
 .track.current .name { color: var(--accent); font-weight: 700; }
-.track .remove { padding: .2rem .5rem; border: 0; background: none; color: var(--muted); opacity: 0; }
+.track .remove { padding: .1rem .4rem; border: 0; background: none; color: var(--muted); opacity: 0; }
 .track:hover .remove, .track .remove:focus-visible { opacity: 1; }
 .track .remove:hover { color: var(--danger); }
 .track.dragging { opacity: .35; }
@@ -144,7 +145,7 @@ progress { width: 8rem; accent-color: var(--accent); }
 .track.drop-after::after { bottom: -2px; }
 
 /* Now-playing bars; still while paused. */
-.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
 .eq i { width: 3px; height: 100%; border-radius: 1px; background: var(--accent); transform-origin: bottom; animation: eq 1s ease-in-out infinite; }
 .eq i:nth-child(2) { animation-delay: -.4s; }
 .eq i:nth-child(3) { animation-delay: -.7s; }
@@ -152,18 +153,37 @@ body:not(.is-playing) .eq i { animation-play-state: paused; }
 @keyframes eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; } }
 
-/* ---------- library: song list tray ---------- */
-.tray-toggle {
-  display: flex; align-items: center; gap: .6rem; width: 100%; padding: .1rem 0;
-  border: 0; background: none; font-weight: 600; text-align: left;
+/* ---------- playlist page: library sidebar ---------- */
+/* Only the tab shows at the left edge; the list slides out on hover, focus, or a click. */
+.sidebar {
+  --tab: 2.4rem; --width: min(25rem, calc(100vw - 1.5rem));
+  position: fixed; z-index: 5; left: 0; top: 4.6rem; bottom: 1rem; width: var(--width);
+  display: flex; align-items: center;
+  transform: translateX(calc(var(--tab) - var(--width)));
+  transition: transform .25s ease .2s;
 }
-.tray-toggle:hover:not(:disabled) { color: var(--accent); }
-.tray-toggle .chevron { margin-left: auto; transition: transform .2s; }
-.tray-toggle[aria-expanded=true] .chevron { transform: rotate(180deg); }
-#library-body { display: grid; gap: .9rem; }
+.sidebar:hover, .sidebar:focus-within, .sidebar.open { transform: none; transition-delay: 0s; }
+body.docked .sidebar { bottom: 6.2rem; }
+.sidebar-body {
+  align-self: stretch; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .65rem;
+  padding: 1rem .8rem; overflow-y: auto; background: var(--card);
+  border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--radius) var(--radius) 0; box-shadow: var(--shadow);
+}
+.sidebar-tab {
+  width: var(--tab); padding: .9rem 0; display: grid; justify-items: center; gap: .45rem;
+  border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0;
+  background: var(--card); box-shadow: var(--shadow); color: var(--muted); font-weight: 700;
+}
+.sidebar-tab .vertical { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .06em; }
+.sidebar:hover .sidebar-tab, .sidebar:focus-within .sidebar-tab, .sidebar.open .sidebar-tab { color: var(--accent); }
+.sidebar .song { padding: .3rem .45rem; gap: .45rem; font-size: .92rem; }
+/* One line per song; the full name shows on hover. */
+.sidebar .song .name, .track .name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Keep page content clear of the tab on narrow windows. */
+@media (max-width: 58rem) { #playlist { padding-left: 2.2rem; } }
 
 /* ---------- library ---------- */
-#search { flex: 1; width: auto; }
+#search { width: 100%; }
 .select-all { display: flex; align-items: center; gap: .5rem; font-weight: 400; padding: 0 .6rem; }
 .song { display: flex; align-items: center; gap: .6rem; padding: .45rem .6rem; border-radius: 10px; }
 .song:hover { background: var(--bg); }

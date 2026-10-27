@@ -9,7 +9,7 @@ const audio = $<HTMLAudioElement>('audio'), video = $<HTMLVideoElement>('video')
 /** The element playing now: audio, so no video is decoded, unless the video is shown. */
 let media: HTMLMediaElement = audio;
 const dock = $('#dock'), playButton = $('#play'), seek = $<HTMLInputElement>('#seek');
-const playlist = $('#playlist'), queueList = $('#queue'), playlistLink = $('#show-queue');
+const queueList = $('#queue'), playlistLink = $('#show-queue');
 const videoPanel = $('#video-panel'), videoButton = $('#show-video');
 
 let queue: string[] = [];
@@ -122,7 +122,7 @@ function queueRow(name: string, i: number) {
   const li = el('li', { className: 'track' + (isCurrent ? ' current' : ''), draggable: many },
     many ? el('span', { className: 'grip', textContent: '⠿', title: 'Drag to reorder' }) : '',
     el('span', { className: 'index' }, marker),
-    button(name, () => play(i), { className: 'name', title: isCurrent ? 'Now playing' : 'Play now' }),
+    button(name, () => play(i), { className: 'name', title: isCurrent ? `Now playing: ${name}` : `Play ${name}` }),
     button('✕', () => updateQueue(name), {
       className: 'remove', title: 'Remove from playlist', ariaLabel: 'Remove from playlist',
     }),
@@ -175,16 +175,17 @@ function showNow() {
     : `${pos + 1} of ${queue.length}${repeatOne ? ' · repeating' : ''}`;
   for (const id of ['#prev', '#next', '#repeat', '#shuffle']) $(id).hidden = !many;
   showPlaylistLink();
-  playlist.hidden = !name;
-  $('#playlist-info').textContent = !many ? '1 song, on repeat'
+  $('#playlist-empty').hidden = !!name;
+  queueList.hidden = !name;
+  $('#playlist-info').textContent = !name ? '' : !many ? '1 song, on repeat'
     : `${queue.length} songs · drag ⠿ to reorder`;
   queueList.replaceChildren(...queue.map(queueRow));
   listeners.forEach((fn) => fn());
 }
 
-/** ☰ leads to the playlist, so it is only needed away from the Library page. */
+/** ☰ leads to the playlist, so it is only needed away from the Playlist page. */
 function showPlaylistLink() {
-  playlistLink.hidden = !queue.length || location.hash === '#library';
+  playlistLink.hidden = !queue.length || location.hash === '#playlist';
 }
 
 function togglePlay() {

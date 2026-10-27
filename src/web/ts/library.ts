@@ -1,6 +1,6 @@
 /**
- * The library list: search, select, play, add to the playlist, and rename or delete via ⋮.
- * While the playlist has songs, the list folds away behind a tray toggle.
+ * The library sidebar: search, select, play, add to the playlist, and rename or delete via ⋮.
+ * It slides out from the left edge on hover, on keyboard focus, or when its tab is clicked.
  */
 import { $, el, button } from './dom.js';
 import { megabytes } from './format.js';
@@ -9,13 +9,11 @@ import * as player from './player.js';
 
 const search = $<HTMLInputElement>('#search'), all = $<HTMLInputElement>('#all');
 const playSelected = $<HTMLButtonElement>('#play-selected'), error = $('#lib-error');
-const tray = $('#library-toggle'), body = $('#library-body');
+const sidebar = $('#library');
 /** Room the ⋮ menu needs below its button, in pixels. */
 const MENU_HEIGHT = 110;
 let files: VideoFile[] = [];
 let selected = new Set<string>();
-/** The library list is open even though the playlist has songs. */
-let trayOpen = false, hadPlaylist = false;
 
 export async function loadFiles() {
   try {
@@ -34,14 +32,7 @@ function visibleFiles() {
 }
 
 function render() {
-  // Fold the list away when a playlist starts; the user opens it when they want more songs.
-  const hasPlaylist = !!player.current();
-  if (hasPlaylist && !hadPlaylist) trayOpen = false;
-  hadPlaylist = hasPlaylist;
-  tray.hidden = !hasPlaylist;
-  tray.setAttribute('aria-expanded', String(trayOpen));
-  body.hidden = hasPlaylist && !trayOpen;
-  $('#library-count').textContent = `${files.length} songs`;
+  $('#library-count').textContent = files.length ? `${files.length} songs` : '';
 
   const list = visibleFiles();
   $('#songs').replaceChildren(...list.map(songRow));
@@ -64,7 +55,7 @@ function songRow(f: VideoFile) {
     : button('➕', () => player.addToQueue(f.name), { title: 'Add to playlist', ariaLabel: 'Add to playlist' });
   return el('li', { className: 'song' + (player.current() === f.name ? ' playing' : '') },
     box,
-    button(f.name, () => player.playNow(f.name), { className: 'name', title: 'Play now' }),
+    button(f.name, () => player.playNow(f.name), { className: 'name', title: `Play ${f.name}` }),
     el('span', { className: 'size', textContent: megabytes(f.size) }),
     add,
     menu(f.name),
@@ -80,11 +71,14 @@ function menu(name: string) {
   details.append(el('div', { className: 'menu-items' },
     item('Rename', renameSong),
     item('Delete', deleteSong, { className: 'danger' })));
-  // Open upward when the menu would end up under the player dock or off screen.
+  // Open upward when the menu would end up below the sidebar's edge or under the player.
   details.ontoggle = () => {
     if (!details.open) return;
     const dock = $('#dock');
-    const floor = dock.hidden ? innerHeight : dock.getBoundingClientRect().top;
+    const floor = Math.min(
+      dock.hidden ? innerHeight : dock.getBoundingClientRect().top,
+      sidebar.getBoundingClientRect().bottom,
+    );
     details.classList.toggle('up', floor - details.getBoundingClientRect().bottom < MENU_HEIGHT);
   };
   return details;
@@ -121,10 +115,8 @@ function deleteSong(name: string) {
   });
 }
 
-tray.onclick = () => {
-  trayOpen = !trayOpen;
-  render();
-};
+// Hover opens the sidebar; a click on its tab keeps it open for touch screens.
+$('#library-tab').onclick = () => sidebar.classList.toggle('open');
 search.oninput = render;
 all.onchange = () => {
   for (const f of visibleFiles()) {
@@ -135,8 +127,9 @@ all.onchange = () => {
 };
 playSelected.onclick = () => player.playQueue(files.map((f) => f.name).filter((n) => selected.has(n)));
 player.onChange(render);
-// Clicking anywhere else closes an open ⋮ menu.
+// Clicking anywhere else closes an open ⋮ menu, and the sidebar if a click opened it.
 document.addEventListener('click', (e) => {
+  if (!sidebar.contains(e.target as Node)) sidebar.classList.remove('open');
   for (const open of document.querySelectorAll<HTMLDetailsElement>('details.menu[open]')) {
     if (!open.contains(e.target as Node)) open.open = false;
   }
