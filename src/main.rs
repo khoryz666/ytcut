@@ -1,7 +1,9 @@
 //! ytcut: local web app to download YouTube videos (optionally trimmed) and play them on repeat.
-//! Usage: ytcut [--exit-when-idle] [FOLDER]   (PORT env var overrides the default 8765)
+//! Usage: ytcut [--exit-when-idle] [--chrome-profile=DIR] [FOLDER]
+//! (PORT env var overrides the default 8765)
 //!
 //! With --exit-when-idle the server stops once no page is open and no download runs.
+//! With --chrome-profile, yt-dlp signs in to YouTube with that Chrome profile's cookies.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -40,6 +42,8 @@ struct Job {
 struct App {
     out: PathBuf,
     port: String,
+    /// Chrome profile directory to read YouTube cookies from.
+    chrome_profile: Option<String>,
     jobs: Mutex<Vec<Job>>,
     /// Open pages, counted by their /alive connections.
     pages: AtomicUsize,
@@ -100,6 +104,10 @@ fn main() -> io::Result<()> {
     let app = Arc::new(App {
         out,
         port,
+        chrome_profile: flags
+            .iter()
+            .find_map(|f| f.strip_prefix("--chrome-profile="))
+            .map(String::from),
         jobs: Mutex::default(),
         pages: AtomicUsize::new(0),
     });
@@ -211,7 +219,7 @@ fn route(req: &Request, app: &Arc<App>) -> Result<Reply, String> {
         ("GET", "/") => (200, "text/html; charset=utf-8", PAGE.into()),
         ("GET", "/jobs") => (200, JSON, jobs_json(&app.jobs.lock().unwrap())),
         ("GET", "/files") => (200, JSON, files_json(&app.out).map_err(err)?),
-        ("GET", "/info") => (200, JSON, info(get("url"))?),
+        ("GET", "/info") => (200, JSON, info(app, get("url"))?),
         ("POST", "/download") => {
             download(app, get("url"), get("name"), get("start"), get("end"))?;
             (202, TEXT, String::new())
@@ -281,11 +289,10 @@ fn byte_range(r: &str, size: u64) -> Option<(u64, u64)> {
 }
 
 /// Title and duration of a video, for the download form preview.
-fn info(url: &str) -> Result<String, String> {
+fn info(app: &App, url: &str) -> Result<String, String> {
     check_url(url)?;
-    let out = Command::new("yt-dlp")
+    let out = yt_dlp(app)
         .args([
-            "--no-playlist",
             "--skip-download",
             "--print",
             "duration",
@@ -313,6 +320,20 @@ fn info(url: &str) -> Result<String, String> {
                 yt_error,
             )),
     }
+}
+
+/// yt-dlp for a single video, signed in with the Chrome profile's cookies if there are any.
+fn yt_dlp(app: &App) -> Command {
+    let mut cmd = Command::new("yt-dlp");
+    cmd.arg("--no-playlist");
+    if let Some(dir) = app
+        .chrome_profile
+        .as_deref()
+        .filter(|d| Path::new(d).is_dir())
+    {
+        cmd.args(["--cookies-from-browser", &format!("chrome:{dir}")]);
+    }
+    cmd
 }
 
 /// "ERROR: [youtube] id: Sign in to confirm. Use --cookies ..." -> "Sign in to confirm."
@@ -356,8 +377,8 @@ fn download(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> Re
     } else {
         name.replace('%', "%%")
     };
-    let mut cmd = Command::new("yt-dlp");
-    cmd.args(["--no-playlist", "--newline", "--progress"])
+    let mut cmd = yt_dlp(app);
+    cmd.args(["--newline", "--progress"])
         .args([
             "--progress-template",
             "download:PROGRESS %(progress._percent_str)s",
