@@ -10,6 +10,8 @@ The window uses its own Chrome profile in `~/.local/share/ytcut/chrome`. It does
 
 The app stops when you close the window. If you double-click while it is open, you get a second window. The app stops when the last one closes.
 
+Only one copy of the app can run at a time.
+
 From a terminal:
 
 ```sh
