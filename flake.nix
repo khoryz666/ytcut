@@ -21,7 +21,10 @@
               setsid ${default}/bin/ytcut "$HOME/Music" >/dev/null 2>&1 </dev/null &
               for _ in $(seq 50); do up && break; sleep 0.1; done
             fi
-            exec google-chrome --app="http://127.0.0.1:$port"
+            # Own profile: separate instance and taskbar entry, apart from normal browsing.
+            exec google-chrome --app="http://127.0.0.1:$port" --class=ytcut \
+              --user-data-dir="''${XDG_DATA_HOME:-$HOME/.local/share}/ytcut/chrome" \
+              --no-first-run --no-default-browser-check
           '';
         };
 
