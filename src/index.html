@@ -139,6 +139,7 @@
         <span class="hint" id="now"></span>
         <button id="prev" title="Previous">⏮</button>
         <button id="next" title="Next">⏭</button>
+        <button id="repeat" aria-pressed="false" title="Repeat this video">🔂 Repeat one</button>
         <button id="shuffle" aria-pressed="false">🔀 Shuffle</button>
         <button id="stop" title="Stop and close the player">✕</button>
       </div>
@@ -287,7 +288,7 @@
 
   /* ---------- library ---------- */
   const video = $('video');
-  let files = [], selected = new Set(), queue = [], pos = 0, shuffle = false, failures = 0;
+  let files = [], selected = new Set(), queue = [], pos = 0, shuffle = false, repeatOne = false, failures = 0;
 
   async function loadFiles() {
     try {
@@ -416,9 +417,13 @@
 
   function showNow() {
     const name = queue[pos], many = queue.length > 1;
-    $('#now').textContent = !name ? '' : many ? `${name} · ${pos + 1} of ${queue.length} · looping` : `${name} · on repeat`;
+    // A lone song, or "repeat one", loops natively: no gap between plays.
+    video.loop = repeatOne || !many;
+    $('#now').textContent = !name ? ''
+      : !many ? `${name} · on repeat`
+      : `${name} · ${pos + 1} of ${queue.length} · ${repeatOne ? 'repeating this one' : 'looping'}`;
     $('#now-nav').textContent = name ? `♪ ${name}` : '';
-    for (const id of ['#prev', '#next', '#shuffle']) $(id).hidden = !many;
+    for (const id of ['#prev', '#next', '#repeat', '#shuffle']) $(id).hidden = !many;
     renderSongs();
   }
 
@@ -433,10 +438,14 @@
   $('#prev').onclick = () => step(-1);
   $('#next').onclick = () => step(1);
   $('#stop').onclick = stop;
-  $('#shuffle').onclick = () => {
-    shuffle = !shuffle;
-    $('#shuffle').setAttribute('aria-pressed', shuffle);
-  };
+  /** Flip a toggle button and return its new state. */
+  function toggle(id) {
+    const on = $(id).getAttribute('aria-pressed') !== 'true';
+    $(id).setAttribute('aria-pressed', on);
+    return on;
+  }
+  $('#shuffle').onclick = () => { shuffle = toggle('#shuffle'); };
+  $('#repeat').onclick = () => { repeatOne = toggle('#repeat'); showNow(); };
 
   // Tells the server this page is open, so it can stop once every window is closed.
   new EventSource('/alive');
