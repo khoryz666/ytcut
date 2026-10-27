@@ -2,13 +2,18 @@
 import { $, el, button, toggle } from './dom.js';
 import { clock } from './format.js';
 
-const video = $<HTMLVideoElement>('video');
+/** Times a song is reloaded after an error before giving up on it. */
+const MAX_RETRIES = 2;
+
+const audio = $<HTMLAudioElement>('audio'), video = $<HTMLVideoElement>('video');
+/** The element playing now: audio, so no video is decoded, unless the video is shown. */
+let media: HTMLMediaElement = audio;
 const dock = $('#dock'), playButton = $('#play'), seek = $<HTMLInputElement>('#seek');
 const queueList = $('#queue'), queueButton = $('#show-queue');
 const videoPanel = $('#video-panel'), videoButton = $('#show-video');
 
 let queue: string[] = [];
-let pos = 0, shuffle = false, repeatOne = false, failures = 0, seeking = false;
+let pos = 0, shuffle = false, repeatOne = false, failures = 0, retries = 0, seeking = false;
 const listeners: (() => void)[] = [];
 
 /** Call fn whenever the playlist or the current song changes. */
@@ -34,7 +39,7 @@ export function updateQueue(name: string, newName?: string) {
   if (i < 0) return;
   if (newName) {
     queue[i] = newName;
-    if (i === pos) play(pos, video.currentTime);
+    if (i === pos) play(pos, media.currentTime);
     else showNow();
     return;
   }
@@ -47,10 +52,33 @@ export function updateQueue(name: string, newName?: string) {
 
 function play(i: number, time = 0) {
   pos = i;
-  video.src = '/media/' + encodeURIComponent(queue[pos]);
-  video.currentTime = time;
-  video.play().catch(() => {});
+  retries = 0;
+  load(time);
   showNow();
+}
+
+/** Start the current song at `time` seconds. */
+function load(time: number) {
+  media.src = '/media/' + encodeURIComponent(queue[pos]);
+  media.currentTime = time;
+  media.play().catch(() => {});
+}
+
+/** Move playback to the other element at the same spot, keeping play or pause. */
+function switchTo(next: HTMLMediaElement) {
+  if (next === media) return;
+  const from = media, src = from.getAttribute('src'), time = from.currentTime, paused = from.paused;
+  media = next;
+  from.pause();
+  from.removeAttribute('src');
+  from.load();
+  if (src) {
+    next.src = src;
+    next.currentTime = time;
+    if (!paused) next.play().catch(() => {});
+  }
+  showNow();
+  showPlaying();
 }
 
 function step(dir: number) {
@@ -61,8 +89,8 @@ function step(dir: number) {
 
 function stop() {
   queue = [];
-  video.removeAttribute('src');
-  video.load();
+  media.removeAttribute('src');
+  media.load();
   showNow();
 }
 
@@ -95,7 +123,7 @@ function showNow() {
   dock.hidden = !name;
   document.body.classList.toggle('docked', !!name);
   // A lone song, or "repeat one", loops natively: no gap between plays.
-  video.loop = repeatOne || !many;
+  media.loop = repeatOne || !many;
   $('#now').textContent = name ?? '';
   $('#now-pos').textContent = !many ? 'On repeat'
     : `${pos + 1} of ${queue.length}${repeatOne ? ' · repeating' : ''}`;
@@ -106,42 +134,60 @@ function showNow() {
 }
 
 function togglePlay() {
-  if (video.paused) video.play().catch(() => {});
-  else video.pause();
+  if (media.paused) media.play().catch(() => {});
+  else media.pause();
 }
 
 function showPlaying() {
-  const label = video.paused ? 'Play' : 'Pause';
-  playButton.textContent = video.paused ? '▶' : '⏸';
+  const label = media.paused ? 'Play' : 'Pause';
+  playButton.textContent = media.paused ? '▶' : '⏸';
   playButton.title = label;
   playButton.ariaLabel = label;
 }
 
-video.onplay = showPlaying;
-video.onpause = showPlaying;
-video.onclick = togglePlay;
-video.onended = () => step(1);
-video.onplaying = () => { failures = 0; };
-video.onerror = () => {
+/** A song failed to load: retry it a couple of times, then report it and move on. */
+function failed() {
   if (!queue.length) return;
+  const song = queue[pos], at = media.currentTime;
+  console.warn('ytcut: playback error', song, media.error?.code, media.error?.message);
+  // Decoders and cold disks sometimes fail on the first try; reload at the same spot.
+  if (retries < MAX_RETRIES) {
+    retries++;
+    setTimeout(() => { if (queue[pos] === song) load(at); }, 400 * retries);
+    return;
+  }
   $('#now-pos').textContent = "Can't play this file";
   // Skip to the next song, but stop once every song in the loop has failed.
   if (queue.length > 1 && ++failures < queue.length) setTimeout(() => step(1), 1500);
-};
-video.onloadedmetadata = () => {
-  seek.max = String(video.duration || 0);
-  $('#duration').textContent = clock(video.duration || 0);
-};
-video.ontimeupdate = () => {
-  if (!seeking) seek.value = String(video.currentTime);
-  $('#time').textContent = clock(seeking ? +seek.value : video.currentTime);
-};
+}
+
+/** Listen on both elements, but only react to the one playing now. */
+function on(type: keyof HTMLMediaElementEventMap, handler: () => void) {
+  for (const element of [audio, video]) {
+    element.addEventListener(type, () => { if (element === media) handler(); });
+  }
+}
+
+on('play', showPlaying);
+on('pause', showPlaying);
+on('ended', () => step(1));
+on('playing', () => { failures = 0; retries = 0; });
+on('error', failed);
+on('loadedmetadata', () => {
+  seek.max = String(media.duration || 0);
+  $('#duration').textContent = clock(media.duration || 0);
+});
+on('timeupdate', () => {
+  if (!seeking) seek.value = String(media.currentTime);
+  $('#time').textContent = clock(seeking ? +seek.value : media.currentTime);
+});
+video.onclick = togglePlay;
 seek.oninput = () => {
   seeking = true;
   $('#time').textContent = clock(+seek.value);
 };
 seek.onchange = () => {
-  video.currentTime = +seek.value;
+  media.currentTime = +seek.value;
   seeking = false;
 };
 
@@ -153,8 +199,10 @@ $('#shuffle').onclick = () => { shuffle = toggle($('#shuffle')); };
 $('#repeat').onclick = () => { repeatOne = toggle($('#repeat')); showNow(); };
 queueButton.onclick = () => { toggle(queueButton); showNow(); };
 videoButton.onclick = () => {
-  videoPanel.hidden = !toggle(videoButton);
-  const label = videoPanel.hidden ? 'Show video' : 'Hide video';
+  const show = toggle(videoButton);
+  videoPanel.hidden = !show;
+  switchTo(show ? video : audio);
+  const label = show ? 'Hide video' : 'Show video';
   videoButton.title = label;
   videoButton.ariaLabel = label;
 };

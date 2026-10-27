@@ -73,6 +73,8 @@
 </main>
 
 <footer id="dock" hidden>
+  <!-- Audio plays without decoding any video; the video element is used only when shown. -->
+  <audio preload="auto"></audio>
   <div class="panel" id="video-panel" hidden><video playsinline></video></div>
   <ul class="panel" id="queue" hidden></ul>
   <div class="bar">
