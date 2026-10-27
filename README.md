@@ -41,19 +41,19 @@ git clone <this repository> ~/ytcut
 cd ~/ytcut
 ```
 
-### 4. Add it to your desktop
+### 4. Add a Desktop shortcut
 
 ```sh
 nix run .#install
 ```
 
-This adds **ytcut** to your app menu and puts a shortcut on your Desktop. The first run takes a few minutes while Nix downloads what ytcut needs.
+This creates one file, `~/Desktop/ytcut.desktop`. It does not change your app menu. To remove the shortcut, delete that file.
 
 If your desktop asks whether to trust or allow the shortcut, say yes. On GNOME, right-click the icon and choose **Allow Launching**.
 
 ### 5. Open it
 
-Click **ytcut** in your app menu, or double-click it on the Desktop.
+Double-click **ytcut** on the Desktop. The first start takes a few minutes while Nix downloads what ytcut needs.
 
 You can also run it from the ytcut folder:
 
@@ -115,8 +115,11 @@ The playlist is not saved.
 **Nothing happens when I click the shortcut.**
 Run `nix run` in the ytcut folder to see the error.
 
+**I moved the ytcut folder.**
+The shortcut points to the old place. Run `nix run .#install` again in the new folder.
+
 **The Desktop shortcut opens as a text file.**
-Your desktop has not trusted it yet. Right-click it and choose **Allow Launching** (GNOME) or **Trust** (Cinnamon, XFCE). Or use the app menu entry.
+Your desktop has not trusted it yet. Right-click it and choose **Allow Launching** (GNOME) or **Trust** (Cinnamon, XFCE).
 
 **"Sign in to confirm you're not a bot".**
 See [If YouTube asks you to sign in](#if-youtube-asks-you-to-sign-in).
@@ -140,6 +143,7 @@ cargo run -- ~/Music
 | `src/library.rs` | The music folder: list, rename, delete, safe file names |
 | `src/downloads.rs` | yt-dlp: look up, download, progress |
 | `src/json.rs` | JSON output |
+| `#[cfg(test)] mod tests` | Unit tests, at the bottom of `http.rs`, `library.rs`, `downloads.rs` and `json.rs` |
 | `src/web/` | The page: HTML, CSS, logo |
 | `src/web/ts/` | The page's TypeScript, one module per part of the page |
 | `build.rs` | Compiles the TypeScript into the binary |
