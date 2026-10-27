@@ -49,6 +49,13 @@ fn main() -> io::Result<()> {
         .nth(1)
         .map_or(env::current_dir()?, PathBuf::from)
         .canonicalize()?;
+    // One server per user, whatever the port or folder. The OS drops the lock when we exit.
+    let runtime_dir = env::var_os("XDG_RUNTIME_DIR").map_or_else(env::temp_dir, PathBuf::from);
+    let lock = File::create(runtime_dir.join("ytcut.lock"))?;
+    if lock.try_lock().is_err() {
+        eprintln!("ytcut is already running");
+        std::process::exit(1);
+    }
     let port = env::var("PORT").unwrap_or_else(|_| "8765".into());
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))?;
     println!("http://127.0.0.1:{port}  ->  {}", out.display());
