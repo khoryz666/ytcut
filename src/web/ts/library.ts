@@ -1,4 +1,7 @@
-/** The library list: search, select, play, add to the playlist, and rename or delete via ⋮. */
+/**
+ * The library list: search, select, play, add to the playlist, and rename or delete via ⋮.
+ * While the playlist has songs, the list folds away behind a tray toggle.
+ */
 import { $, el, button } from './dom.js';
 import { megabytes } from './format.js';
 import { request, errorMessage, type VideoFile } from './api.js';
@@ -6,10 +9,13 @@ import * as player from './player.js';
 
 const search = $<HTMLInputElement>('#search'), all = $<HTMLInputElement>('#all');
 const playSelected = $<HTMLButtonElement>('#play-selected'), error = $('#lib-error');
+const tray = $('#library-toggle'), body = $('#library-body');
 /** Room the ⋮ menu needs below its button, in pixels. */
 const MENU_HEIGHT = 110;
 let files: VideoFile[] = [];
 let selected = new Set<string>();
+/** The library list is open even though the playlist has songs. */
+let trayOpen = false, hadPlaylist = false;
 
 export async function loadFiles() {
   try {
@@ -28,6 +34,15 @@ function visibleFiles() {
 }
 
 function render() {
+  // Fold the list away when a playlist starts; the user opens it when they want more songs.
+  const hasPlaylist = !!player.current();
+  if (hasPlaylist && !hadPlaylist) trayOpen = false;
+  hadPlaylist = hasPlaylist;
+  tray.hidden = !hasPlaylist;
+  tray.setAttribute('aria-expanded', String(trayOpen));
+  body.hidden = hasPlaylist && !trayOpen;
+  $('#library-count').textContent = `${files.length} songs`;
+
   const list = visibleFiles();
   $('#songs').replaceChildren(...list.map(songRow));
   $('#empty').textContent = !files.length ? 'No songs yet. Download one first.'
@@ -49,7 +64,7 @@ function songRow(f: VideoFile) {
     : button('➕', () => player.addToQueue(f.name), { title: 'Add to playlist', ariaLabel: 'Add to playlist' });
   return el('li', { className: 'song' + (player.current() === f.name ? ' playing' : '') },
     box,
-    button(f.name, () => player.playQueue([f.name]), { className: 'name', title: 'Play on repeat' }),
+    button(f.name, () => player.playNow(f.name), { className: 'name', title: 'Play now' }),
     el('span', { className: 'size', textContent: megabytes(f.size) }),
     add,
     menu(f.name),
@@ -106,6 +121,10 @@ function deleteSong(name: string) {
   });
 }
 
+tray.onclick = () => {
+  trayOpen = !trayOpen;
+  render();
+};
 search.oninput = render;
 all.onchange = () => {
   for (const f of visibleFiles()) {

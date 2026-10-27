@@ -72,8 +72,9 @@ button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--brand); border: 0; color: #fff; font-weight: 700; }
 button.primary:hover:not(:disabled) { filter: brightness(1.05); }
 button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
-button.icon { width: 2.3rem; height: 2.3rem; padding: 0; border-color: transparent; background: none; border-radius: 50%; }
-button.icon:hover:not(:disabled) { background: var(--bg); border-color: transparent; }
+a.icon { display: inline-grid; place-items: center; color: inherit; text-decoration: none; }
+button.icon, a.icon { width: 2.3rem; height: 2.3rem; padding: 0; border-color: transparent; background: none; border-radius: 50%; }
+button.icon:hover:not(:disabled), a.icon:hover { background: var(--bg); border-color: transparent; }
 button.icon[aria-pressed=true] { background: var(--accent-soft); }
 
 /* ---------- download ---------- */
@@ -108,6 +109,58 @@ progress { width: 8rem; accent-color: var(--accent); }
   width: var(--thumb); height: var(--thumb); border-radius: 50%; box-sizing: border-box;
   background: #fff; border: 2px solid var(--accent); cursor: grab; pointer-events: auto;
 }
+
+/* ---------- library: playlist ---------- */
+.playlist-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+.playlist-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.01em; }
+#queue { display: grid; gap: .15rem; margin: 0; padding: 0; list-style: none; }
+.track {
+  position: relative; display: flex; align-items: center; gap: .7rem;
+  padding: .55rem .7rem; border-radius: 10px; transition: background .15s;
+}
+.track:hover { background: var(--bg); }
+.track.current { background: var(--accent-soft); }
+.track .grip {
+  cursor: grab; color: var(--muted); font-size: 1.15rem; line-height: 1; user-select: none;
+  padding: .15rem .2rem; border-radius: 6px;
+}
+.track:hover .grip { color: var(--accent); background: var(--card); }
+.track .grip:active { cursor: grabbing; }
+.track .index {
+  width: 1.6rem; text-align: center; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums;
+}
+.track .name { flex: 1; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; font-weight: 500; }
+.track .name:hover { color: var(--accent); }
+.track.current .name { color: var(--accent); font-weight: 700; }
+.track .remove { padding: .2rem .5rem; border: 0; background: none; color: var(--muted); opacity: 0; }
+.track:hover .remove, .track .remove:focus-visible { opacity: 1; }
+.track .remove:hover { color: var(--danger); }
+.track.dragging { opacity: .35; }
+/* Where the dragged song will land. */
+.track.drop-before::before, .track.drop-after::after {
+  content: ''; position: absolute; left: .7rem; right: .7rem; height: 3px; border-radius: 2px; background: var(--brand);
+}
+.track.drop-before::before { top: -2px; }
+.track.drop-after::after { bottom: -2px; }
+
+/* Now-playing bars; still while paused. */
+.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.eq i { width: 3px; height: 100%; border-radius: 1px; background: var(--accent); transform-origin: bottom; animation: eq 1s ease-in-out infinite; }
+.eq i:nth-child(2) { animation-delay: -.4s; }
+.eq i:nth-child(3) { animation-delay: -.7s; }
+body:not(.is-playing) .eq i { animation-play-state: paused; }
+@keyframes eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .eq i { animation: none; } }
+
+/* ---------- library: song list tray ---------- */
+.tray-toggle {
+  display: flex; align-items: center; gap: .6rem; width: 100%; padding: .1rem 0;
+  border: 0; background: none; font-weight: 600; text-align: left;
+}
+.tray-toggle:hover:not(:disabled) { color: var(--accent); }
+.tray-toggle .chevron { margin-left: auto; transition: transform .2s; }
+.tray-toggle[aria-expanded=true] .chevron { transform: rotate(180deg); }
+#library-body { display: grid; gap: .9rem; }
 
 /* ---------- library ---------- */
 #search { flex: 1; width: auto; }
@@ -145,8 +198,6 @@ progress { width: 8rem; accent-color: var(--accent); }
   box-shadow: var(--shadow); padding: .5rem;
 }
 #video-panel video { display: block; width: 100%; max-height: 45vh; background: #000; border-radius: 10px; }
-#queue { max-height: 35vh; overflow: auto; }
-#queue .song { cursor: grab; }
 .bar {
   display: flex; align-items: center; gap: .8rem; padding: .55rem .8rem;
   background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(12px);

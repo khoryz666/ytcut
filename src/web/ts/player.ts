@@ -9,11 +9,13 @@ const audio = $<HTMLAudioElement>('audio'), video = $<HTMLVideoElement>('video')
 /** The element playing now: audio, so no video is decoded, unless the video is shown. */
 let media: HTMLMediaElement = audio;
 const dock = $('#dock'), playButton = $('#play'), seek = $<HTMLInputElement>('#seek');
-const queueList = $('#queue'), queueButton = $('#show-queue');
+const playlist = $('#playlist'), queueList = $('#queue'), playlistLink = $('#show-queue');
 const videoPanel = $('#video-panel'), videoButton = $('#show-video');
 
 let queue: string[] = [];
 let pos = 0, shuffle = false, repeatOne = false, failures = 0, retries = 0, seeking = false;
+/** Index of the playlist row being dragged, or -1. */
+let dragFrom = -1;
 const listeners: (() => void)[] = [];
 
 /** Call fn whenever the playlist or the current song changes. */
@@ -25,6 +27,15 @@ export const isQueued = (name: string) => queue.includes(name);
 export function playQueue(names: string[]) {
   queue = names;
   play(0);
+}
+
+/** Play a song now without losing the playlist: jump to it, or insert it after the current one. */
+export function playNow(name: string) {
+  if (!queue.length) return playQueue([name]);
+  const i = queue.indexOf(name);
+  if (i >= 0) return play(i);
+  queue.splice(pos + 1, 0, name);
+  play(pos + 1);
 }
 
 export function addToQueue(name: string) {
@@ -102,20 +113,55 @@ function move(from: number, to: number) {
   showNow();
 }
 
-/** A playlist row: click to play, drag to reorder, ✕ to remove. */
+/** A playlist row: ⠿ to drag and reorder, click to play, ✕ to remove. */
 function queueRow(name: string, i: number) {
-  const li = el('li', { className: 'song' + (i === pos ? ' playing' : ''), draggable: true },
-    el('span', { className: 'size', textContent: String(i + 1) }),
-    button(name, () => play(i), { className: 'name', title: 'Play now' }),
-    button('✕', () => updateQueue(name), { title: 'Remove from playlist', ariaLabel: 'Remove from playlist' }),
+  const isCurrent = i === pos, many = queue.length > 1;
+  const marker = isCurrent
+    ? el('span', { className: 'eq', title: 'Now playing' }, el('i'), el('i'), el('i'))
+    : String(i + 1);
+  const li = el('li', { className: 'track' + (isCurrent ? ' current' : ''), draggable: many },
+    many ? el('span', { className: 'grip', textContent: '⠿', title: 'Drag to reorder' }) : '',
+    el('span', { className: 'index' }, marker),
+    button(name, () => play(i), { className: 'name', title: isCurrent ? 'Now playing' : 'Play now' }),
+    button('✕', () => updateQueue(name), {
+      className: 'remove', title: 'Remove from playlist', ariaLabel: 'Remove from playlist',
+    }),
   );
-  li.ondragstart = (e) => e.dataTransfer?.setData('text/plain', String(i));
-  li.ondragover = (e) => e.preventDefault();
+  li.ondragstart = (e) => {
+    dragFrom = i;
+    li.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', name);
+    }
+  };
+  li.ondragend = () => {
+    dragFrom = -1;
+    clearDropMarks();
+  };
+  // Show a line above or below this row where the dragged song will land.
+  li.ondragover = (e) => {
+    if (dragFrom < 0) return;
+    e.preventDefault();
+    const box = li.getBoundingClientRect(), below = e.clientY > box.top + box.height / 2;
+    clearDropMarks();
+    li.classList.add(below ? 'drop-after' : 'drop-before');
+  };
   li.ondrop = (e) => {
     e.preventDefault();
-    move(parseInt(e.dataTransfer?.getData('text/plain') ?? '', 10), i);
+    const below = li.classList.contains('drop-after');
+    clearDropMarks();
+    if (dragFrom < 0) return;
+    const to = i + (below ? 1 : 0);
+    move(dragFrom, dragFrom < to ? to - 1 : to);
   };
   return li;
+}
+
+function clearDropMarks() {
+  for (const row of queueList.querySelectorAll('.drop-before, .drop-after, .dragging')) {
+    row.classList.remove('drop-before', 'drop-after', 'dragging');
+  }
 }
 
 function showNow() {
@@ -127,10 +173,18 @@ function showNow() {
   $('#now').textContent = name ?? '';
   $('#now-pos').textContent = !many ? 'On repeat'
     : `${pos + 1} of ${queue.length}${repeatOne ? ' · repeating' : ''}`;
-  for (const id of ['#prev', '#next', '#repeat', '#shuffle', '#show-queue']) $(id).hidden = !many;
-  queueList.hidden = !many || queueButton.getAttribute('aria-pressed') !== 'true';
+  for (const id of ['#prev', '#next', '#repeat', '#shuffle']) $(id).hidden = !many;
+  showPlaylistLink();
+  playlist.hidden = !name;
+  $('#playlist-info').textContent = !many ? '1 song, on repeat'
+    : `${queue.length} songs · drag ⠿ to reorder`;
   queueList.replaceChildren(...queue.map(queueRow));
   listeners.forEach((fn) => fn());
+}
+
+/** ☰ leads to the playlist, so it is only needed away from the Library page. */
+function showPlaylistLink() {
+  playlistLink.hidden = !queue.length || location.hash === '#library';
 }
 
 function togglePlay() {
@@ -143,6 +197,7 @@ function showPlaying() {
   playButton.textContent = media.paused ? '▶' : '⏸';
   playButton.title = label;
   playButton.ariaLabel = label;
+  document.body.classList.toggle('is-playing', !media.paused);
 }
 
 /** A song failed to load: retry it a couple of times, then report it and move on. */
@@ -197,7 +252,7 @@ $('#next').onclick = () => step(1);
 $('#stop').onclick = stop;
 $('#shuffle').onclick = () => { shuffle = toggle($('#shuffle')); };
 $('#repeat').onclick = () => { repeatOne = toggle($('#repeat')); showNow(); };
-queueButton.onclick = () => { toggle(queueButton); showNow(); };
+window.addEventListener('hashchange', showPlaylistLink);
 videoButton.onclick = () => {
   const show = toggle(videoButton);
   videoPanel.hidden = !show;
