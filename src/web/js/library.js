@@ -1,4 +1,4 @@
-/** The library list: search, select, play, add to the playlist, rename and delete. */
+/** The library list: search, select, play, add to the playlist, and rename or delete via ⋮. */
 import { $, el, button } from './dom.js';
 import { megabytes } from './format.js';
 import { request } from './api.js';
@@ -45,9 +45,19 @@ function songRow(f) {
     el('span', { className: 'size', textContent: megabytes(f.size) }),
     player.isQueued(f.name) ? ''
       : button('➕', () => player.addToQueue(f.name), { title: 'Add to playlist', ariaLabel: 'Add to playlist' }),
-    button('Rename', () => renameSong(f.name)),
-    button('Delete', () => deleteSong(f.name)),
+    menu(f.name),
   );
+}
+
+/** The ⋮ menu with Rename and Delete. */
+function menu(name) {
+  const details = el('details', { className: 'menu' },
+    el('summary', { textContent: '⋮', title: 'More', ariaLabel: 'More options' }));
+  const item = (text, action, props) => button(text, () => { details.open = false; action(name); }, props);
+  details.append(el('div', { className: 'menu-items' },
+    item('Rename', renameSong),
+    item('Delete', deleteSong, { className: 'danger' })));
+  return details;
 }
 
 /** Run a library action, show its error if any, then refresh the list. */
@@ -88,3 +98,9 @@ $('#all').onchange = (e) => {
 };
 $('#play-selected').onclick = () => player.playQueue(files.map((f) => f.name).filter((n) => selected.has(n)));
 player.onChange(render);
+// Clicking anywhere else closes an open ⋮ menu.
+document.addEventListener('click', (e) => {
+  for (const open of document.querySelectorAll('details.menu[open]')) {
+    if (!open.contains(e.target)) open.open = false;
+  }
+});

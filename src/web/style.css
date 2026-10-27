@@ -97,3 +97,18 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; }
 .song .name:hover { color: var(--accent); }
 .song .size { color: var(--muted); font-size: .85rem; white-space: nowrap; }
 .song button:not(.name) { padding: .2rem .55rem; font-size: .85rem; }
+
+/* ---------- library: ⋮ menu ---------- */
+.menu { position: relative; }
+.menu summary {
+  list-style: none; cursor: pointer; padding: .2rem .55rem; border: 1px solid transparent; border-radius: 8px;
+}
+.menu summary::-webkit-details-marker { display: none; }
+.menu summary:hover, .menu[open] summary { border-color: var(--line); }
+.menu-items {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 2; display: grid; min-width: 8rem; padding: .25rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
+}
+.song .menu-items button { border: 0; background: none; text-align: left; padding: .4rem .6rem; }
+.song .menu-items button:hover { background: var(--bg); }
+.song .menu-items .danger { color: var(--accent); }
