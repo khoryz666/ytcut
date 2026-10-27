@@ -363,6 +363,8 @@
     $('#shuffle').setAttribute('aria-pressed', shuffle);
   };
 
+  // Tells the server this page is open, so it can stop once every window is closed.
+  new EventSource('/alive');
   showTab();
   pollJobs();
 </script>

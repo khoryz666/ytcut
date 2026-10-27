@@ -1,5 +1,7 @@
 //! ytcut: local web app to download YouTube videos (optionally trimmed) and play them on repeat.
-//! Usage: ytcut [FOLDER]   (PORT env var overrides the default 8765)
+//! Usage: ytcut [--exit-when-idle] [FOLDER]   (PORT env var overrides the default 8765)
+//!
+//! With --exit-when-idle the server stops once no page is open and no download runs.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -7,13 +9,17 @@ use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use std::{env, thread};
 
 const PAGE: &str = include_str!("index.html");
 const JSON: &str = "application/json";
 const TEXT: &str = "text/plain; charset=utf-8";
+/// How long an idle server waits for a page: at startup, and after the last page closed.
+const STARTUP_GRACE: Duration = Duration::from_secs(60);
+const IDLE_GRACE: Duration = Duration::from_secs(5);
 /// Leaves room for an extension and yt-dlp's temporary suffixes within 255 bytes.
 const MAX_NAME_BYTES: usize = 200;
 const VIDEO_TYPES: [(&str, &str); 5] = [
@@ -35,9 +41,21 @@ struct App {
     out: PathBuf,
     port: String,
     jobs: Mutex<Vec<Job>>,
+    /// Open pages, counted by their /alive connections.
+    pages: AtomicUsize,
 }
 
 impl App {
+    fn busy(&self) -> bool {
+        self.pages.load(Ordering::SeqCst) > 0
+            || self
+                .jobs
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|j| j.status == "running")
+    }
+
     /// Only our own page may call us: blocks other websites (CSRF) and DNS rebinding.
     fn trusted(&self, req: &Request) -> bool {
         let hosts = [
@@ -62,8 +80,10 @@ struct Request {
 type Reply = (u16, &'static str, String);
 
 fn main() -> io::Result<()> {
-    let out = env::args()
-        .nth(1)
+    let (flags, folders): (Vec<String>, Vec<String>) =
+        env::args().skip(1).partition(|a| a.starts_with("--"));
+    let out = folders
+        .first()
         .map_or(env::current_dir()?, PathBuf::from)
         .canonicalize()?;
     // One server per user, whatever the port or folder. The OS drops the lock when we exit.
@@ -81,12 +101,29 @@ fn main() -> io::Result<()> {
         out,
         port,
         jobs: Mutex::default(),
+        pages: AtomicUsize::new(0),
     });
+    if flags.iter().any(|f| f == "--exit-when-idle") {
+        let app = app.clone();
+        thread::spawn(move || exit_when_idle(&app));
+    }
     for stream in listener.incoming().flatten() {
         let app = app.clone();
         thread::spawn(move || handle(&stream, &app));
     }
     Ok(())
+}
+
+fn exit_when_idle(app: &App) {
+    let (mut since, mut grace) = (Instant::now(), STARTUP_GRACE);
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        if app.busy() {
+            (since, grace) = (Instant::now(), IDLE_GRACE);
+        } else if since.elapsed() > grace {
+            std::process::exit(0);
+        }
+    }
 }
 
 fn handle(stream: &TcpStream, app: &Arc<App>) -> io::Result<()> {
@@ -96,6 +133,7 @@ fn handle(stream: &TcpStream, app: &Arc<App>) -> io::Result<()> {
         return reply(stream, (403, TEXT, "forbidden".into()));
     }
     match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/alive") => keep_alive(stream, app),
         ("GET", path) if path.starts_with("/media/") => {
             let range = req.headers.get("range").map(String::as_str);
             serve_media(stream, &app.out, &decode(&path["/media/".len()..]), range)
@@ -105,9 +143,30 @@ fn handle(stream: &TcpStream, app: &Arc<App>) -> io::Result<()> {
 }
 
 fn reply(stream: &TcpStream, (status, ctype, body): Reply) -> io::Result<()> {
-    write_head(stream, status, ctype, body.len() as u64, "")?;
+    write_head(stream, status, ctype, Some(body.len() as u64), "")?;
     let mut w = stream;
     w.write_all(body.as_bytes())
+}
+
+/// Hold an event stream open while the page is open; a failed write means it closed.
+fn keep_alive(stream: &TcpStream, app: &App) -> io::Result<()> {
+    write_head(
+        stream,
+        200,
+        "text/event-stream",
+        None,
+        "Cache-Control: no-store\r\n",
+    )?;
+    app.pages.fetch_add(1, Ordering::SeqCst);
+    let mut w = stream;
+    let closed = loop {
+        if let Err(e) = w.write_all(b": ping\n\n") {
+            break e;
+        }
+        thread::sleep(Duration::from_secs(1));
+    };
+    app.pages.fetch_sub(1, Ordering::SeqCst);
+    Err(closed)
 }
 
 fn read_request(stream: &TcpStream) -> io::Result<Request> {
@@ -170,13 +229,14 @@ fn write_head(
     stream: &TcpStream,
     status: u16,
     ctype: &str,
-    len: u64,
+    len: Option<u64>,
     extra: &str,
 ) -> io::Result<()> {
+    let len = len.map_or(String::new(), |l| format!("Content-Length: {l}\r\n"));
     let mut w = stream;
     write!(
         w,
-        "HTTP/1.1 {status} \r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\n{extra}Connection: close\r\n\r\n"
+        "HTTP/1.1 {status} \r\nContent-Type: {ctype}\r\n{len}{extra}Connection: close\r\n\r\n"
     )
 }
 
@@ -197,7 +257,13 @@ fn serve_media(stream: &TcpStream, out: &Path, name: &str, range: Option<&str>) 
         None => (200, "Accept-Ranges: bytes\r\n".into()),
     };
     let len = if size == 0 { 0 } else { end + 1 - start };
-    write_head(stream, status, mime(&path).unwrap_or(JSON), len, &extra)?;
+    write_head(
+        stream,
+        status,
+        mime(&path).unwrap_or(JSON),
+        Some(len),
+        &extra,
+    )?;
     file.seek(SeekFrom::Start(start))?;
     let mut w = stream;
     io::copy(&mut file.take(len), &mut w).map(drop)
