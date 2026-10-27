@@ -80,27 +80,29 @@ Sometimes YouTube stops downloads with "Sign in to confirm you're not a bot".
 
 You only do this once. The login stays in ytcut's own browser profile, not your normal one.
 
-## Library
+## Library and playlist
 
-- Click a song to play it on repeat.
-- Click ➕ to add a song to the playlist. Or tick several songs and click **Play selected**.
+- Click a song to play it. If a playlist is playing, the song joins it right after the current one.
+- Click ➕ to add a song to the end of the playlist. Or tick several songs and click **Play selected** to start a new playlist.
 - Click ⋮ to rename or delete a song.
 - Use the search box to find a song.
 
+Once the playlist has songs, it fills the Library page and the song list folds away. Click **Add songs from your library** to open the list again.
+
+In the playlist, drag a song by its ⠿ handle to move it. A line shows where it will land. Hover a song and click ✕ to remove it. The playlist is not saved.
+
 ## Player
 
-The player sits at the bottom of the window. It plays audio only. Music keeps playing when you switch pages.
+The player sits at the bottom of the window. It plays audio only, so your graphics card is not used. Music keeps playing when you switch pages.
 
 | Button | What it does |
 |---|---|
 | ⏮ ⏸ ⏭ | Previous, pause or play, next |
 | 🔂 | Repeat the current song |
 | 🔀 | Shuffle |
-| ☰ | Show the playlist. Drag songs to reorder, ✕ to remove |
+| ☰ | Go to the playlist |
 | 🎬 | Show or hide the video |
-| ✕ | Stop |
-
-The playlist is not saved.
+| ✕ | Stop and clear the playlist |
 
 ## Good to know
 
@@ -125,7 +127,7 @@ Your desktop has not trusted it yet. Right-click it and choose **Allow Launching
 See [If YouTube asks you to sign in](#if-youtube-asks-you-to-sign-in).
 
 **A song won't play.**
-Click ✕ and play it again. If it still fails, the file may be damaged. Download it again.
+ytcut retries a song twice by itself before it says "Can't play this file". If you see that message, the file may be damaged. Download it again.
 
 ## Develop
 
