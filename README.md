@@ -6,6 +6,8 @@ Download YouTube videos and play them on repeat. It runs on your computer and op
 
 Double-click **ytcut** on the Desktop. It starts the app for `~/Music` and opens a Chrome window.
 
+The window uses its own Chrome profile in `~/.local/share/ytcut/chrome`. It does not touch your normal Chrome.
+
 The app keeps running after you close the window. Double-click again to reopen it.
 
 From a terminal:
@@ -45,6 +47,7 @@ Name=ytcut
 Exec=/nix/var/nix/profiles/default/bin/nix run "/home/hongye/Music#open"
 Icon=multimedia-video-player
 Terminal=false
+StartupWMClass=ytcut
 EOF
 chmod +x ~/Desktop/ytcut.desktop
 gio set ~/Desktop/ytcut.desktop metadata::trusted true
