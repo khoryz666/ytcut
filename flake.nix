@@ -16,7 +16,8 @@
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          # build.rs compiles the page's TypeScript.
+          nativeBuildInputs = [ pkgs.makeWrapper pkgs.typescript ];
           postInstall = ''
             wrapProgram $out/bin/ytcut --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDeps pkgs)}
           '';
@@ -86,7 +87,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = runtimeDeps pkgs ++ [
-            pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.rust-analyzer
+            pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.rust-analyzer pkgs.typescript
           ];
         };
       });

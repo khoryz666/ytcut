@@ -8,6 +8,8 @@
 *.m4v
 *.3gp
 *.ts
+# ...but not TypeScript sources
+!src/**/*.ts
 
 # audio
 *.mp3

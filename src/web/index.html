@@ -4,31 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ytcut</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
 <script type="module" src="/js/main.js"></script>
 </head>
 <body>
 <header>
-  <nav>
+  <a class="brand" href="#download">
+    <img src="/logo.svg" alt="" width="30" height="30">
+    <span>ytcut</span>
+  </a>
+  <nav class="tabs">
     <a href="#download">Download</a>
     <a href="#library">Library</a>
   </nav>
-  <span id="now-nav"></span>
 </header>
 
 <main>
   <section id="download" hidden>
+    <div class="intro">
+      <h1>Save a song</h1>
+      <p class="hint">Paste a YouTube link, keep the part you like, and it lands in your Music folder.</p>
+    </div>
     <form class="card" id="dl-form">
-      <label>YouTube link
-        <input name="url" type="url" required autofocus placeholder="https://www.youtube.com/watch?v=…">
-      </label>
+      <input name="url" type="url" required autofocus aria-label="YouTube link"
+             placeholder="Paste a YouTube link">
       <p class="hint" id="info"></p>
+      <div class="preview" id="preview" hidden>
+        <img id="thumb" alt="" referrerpolicy="no-referrer">
+        <div>
+          <strong id="title"></strong>
+          <span class="hint" id="length"></span>
+        </div>
+      </div>
       <label>File name
         <input name="name" placeholder="Same as the video title">
       </label>
       <div id="cut" hidden>
-        <div class="row">
-          <strong>Part to download</strong>
+        <div class="row between">
+          <span class="label">Part to download</span>
           <span class="hint" id="cut-label"></span>
         </div>
         <div class="range">
@@ -36,7 +50,6 @@
           <input name="start" type="range" min="0" step="1" aria-label="Start">
           <input name="end" type="range" min="0" step="1" aria-label="End">
         </div>
-        <p class="hint">Drag the handles to keep only part. Arrow keys move 1 second.</p>
       </div>
       <button class="primary">Download</button>
       <p class="error" id="dl-error"></p>
@@ -45,30 +58,48 @@
   </section>
 
   <section id="library" hidden>
-    <div class="card" id="player" hidden>
-      <video controls></video>
-      <div class="row">
-        <span class="hint" id="now"></span>
-        <button id="prev" title="Previous">⏮</button>
-        <button id="next" title="Next">⏭</button>
-        <button id="repeat" aria-pressed="false" title="Repeat this video" aria-label="Repeat this video">🔂</button>
-        <button id="shuffle" aria-pressed="false" title="Shuffle" aria-label="Shuffle">🔀</button>
-        <button id="stop" title="Stop and close the player">✕</button>
-      </div>
-      <ul id="queue" hidden></ul>
-    </div>
     <div class="card">
       <div class="row">
-        <input id="search" type="search" placeholder="Search videos">
+        <input id="search" type="search" placeholder="Search your songs" aria-label="Search">
         <button class="primary" id="play-selected" disabled>▶ Play selected</button>
       </div>
-      <p class="hint">Click a name to play it on repeat. Use ➕ to add it to the playlist, or tick several and press Play selected.</p>
       <label class="select-all"><input id="all" type="checkbox"> Select all</label>
       <ul id="songs"></ul>
       <p class="hint" id="empty"></p>
       <p class="error" id="lib-error"></p>
     </div>
+    <p class="hint center">Click a song to play it on repeat. Use ➕ to add it to the playlist.</p>
   </section>
 </main>
+
+<footer id="dock" hidden>
+  <div class="panel" id="video-panel" hidden><video playsinline></video></div>
+  <ul class="panel" id="queue" hidden></ul>
+  <div class="bar">
+    <div class="controls">
+      <button class="icon" id="prev" title="Previous" aria-label="Previous">⏮</button>
+      <button class="icon play" id="play" title="Pause" aria-label="Pause">⏸</button>
+      <button class="icon" id="next" title="Next" aria-label="Next">⏭</button>
+    </div>
+    <div class="track">
+      <div class="row between">
+        <strong id="now"></strong>
+        <span class="hint" id="now-pos"></span>
+      </div>
+      <div class="seek">
+        <span class="hint" id="time">0:00</span>
+        <input id="seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek">
+        <span class="hint" id="duration">0:00</span>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon" id="repeat" aria-pressed="false" title="Repeat this song" aria-label="Repeat this song">🔂</button>
+      <button class="icon" id="shuffle" aria-pressed="false" title="Shuffle" aria-label="Shuffle">🔀</button>
+      <button class="icon" id="show-queue" aria-pressed="false" title="Playlist" aria-label="Playlist">☰</button>
+      <button class="icon" id="show-video" aria-pressed="false" title="Show video" aria-label="Show video">🎬</button>
+      <button class="icon" id="stop" title="Stop" aria-label="Stop">✕</button>
+    </div>
+  </div>
+</footer>
 </body>
 </html>

@@ -14,19 +14,32 @@ use crate::{downloads, library};
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
+const SVG: &str = "image/svg+xml";
+
+/// A script compiled from src/web/ts by build.rs.
+macro_rules! script {
+    ($name:literal) => {
+        (
+            concat!("/js/", $name),
+            JS,
+            include_str!(concat!(env!("OUT_DIR"), "/js/", $name)),
+        )
+    };
+}
 
 /// The page, compiled into the binary: (path, content type, content).
-const ASSETS: [(&str, &str, &str); 10] = [
+const ASSETS: [(&str, &str, &str); 11] = [
     ("/", HTML, include_str!("web/index.html")),
     ("/style.css", CSS, include_str!("web/style.css")),
-    ("/js/main.js", JS, include_str!("web/js/main.js")),
-    ("/js/dom.js", JS, include_str!("web/js/dom.js")),
-    ("/js/format.js", JS, include_str!("web/js/format.js")),
-    ("/js/api.js", JS, include_str!("web/js/api.js")),
-    ("/js/cut.js", JS, include_str!("web/js/cut.js")),
-    ("/js/download.js", JS, include_str!("web/js/download.js")),
-    ("/js/library.js", JS, include_str!("web/js/library.js")),
-    ("/js/player.js", JS, include_str!("web/js/player.js")),
+    ("/logo.svg", SVG, include_str!("web/logo.svg")),
+    script!("main.js"),
+    script!("dom.js"),
+    script!("format.js"),
+    script!("api.js"),
+    script!("cut.js"),
+    script!("download.js"),
+    script!("library.js"),
+    script!("player.js"),
 ];
 
 pub fn handle(stream: &TcpStream, app: &Arc<App>) -> io::Result<()> {
