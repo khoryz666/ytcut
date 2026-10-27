@@ -18,14 +18,16 @@
           runtimeInputs = [ pkgs.util-linux ];
           text = ''
             port=''${PORT:-8765}
+            # Own profile: separate instance and taskbar entry, apart from normal browsing.
+            # Signing in to YouTube there gives yt-dlp the cookies it needs.
+            profile="''${XDG_DATA_HOME:-$HOME/.local/share}/ytcut/chrome"
             up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; }
             if ! up; then
-              setsid ${default}/bin/ytcut --exit-when-idle "$HOME/Music" >/dev/null 2>&1 </dev/null &
+              setsid ${default}/bin/ytcut --exit-when-idle --chrome-profile="$profile/Default" "$HOME/Music" \
+                >/dev/null 2>&1 </dev/null &
               for _ in $(seq 50); do up && break; sleep 0.1; done
             fi
-            # Own profile: separate instance and taskbar entry, apart from normal browsing.
-            exec google-chrome --app="http://127.0.0.1:$port" --class=ytcut \
-              --user-data-dir="''${XDG_DATA_HOME:-$HOME/.local/share}/ytcut/chrome" \
+            exec google-chrome --app="http://127.0.0.1:$port" --class=ytcut --user-data-dir="$profile" \
               --no-first-run --no-default-browser-check
           '';
         };
