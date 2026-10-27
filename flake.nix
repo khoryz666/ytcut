@@ -11,20 +11,28 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        # Start the server for ~/Music if needed, then open it in a Chrome app window.
+        # Open ~/Music in a Chrome app window. The first launch starts the server and
+        # stops it when its Chrome instance exits; later launches just add a window.
         open = pkgs.writeShellApplication {
           name = "ytcut-open";
           text = ''
             port=''${PORT:-8765}
             up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; }
-            if ! up; then
-              setsid ${default}/bin/ytcut "$HOME/Music" >/dev/null 2>&1 </dev/null &
-              for _ in $(seq 50); do up && break; sleep 0.1; done
-            fi
             # Own profile: separate instance and taskbar entry, apart from normal browsing.
-            exec google-chrome --app="http://127.0.0.1:$port" --class=ytcut \
-              --user-data-dir="''${XDG_DATA_HOME:-$HOME/.local/share}/ytcut/chrome" \
-              --no-first-run --no-default-browser-check
+            chrome() {
+              google-chrome --app="http://127.0.0.1:$port" --class=ytcut \
+                --user-data-dir="''${XDG_DATA_HOME:-$HOME/.local/share}/ytcut/chrome" \
+                --no-first-run --no-default-browser-check
+            }
+            if up; then
+              chrome
+              exit
+            fi
+            ${default}/bin/ytcut "$HOME/Music" >/dev/null 2>&1 </dev/null &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT INT TERM HUP
+            for _ in $(seq 50); do up && break; sleep 0.1; done
+            chrome
           '';
         };
 
