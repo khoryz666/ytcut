@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ytcut</title>
+<style>
+  :root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
+  body { max-width: 32rem; margin: 3rem auto; padding: 0 1rem; }
+  form, .row { display: grid; gap: .6rem; }
+  .row { grid-template-columns: 1fr 1fr; }
+  input, button { font: inherit; padding: .5rem; min-width: 0; }
+  #error { color: #d33; margin: 0; }
+  ul { list-style: none; padding: 0; }
+</style>
+</head>
+<body>
+<form>
+  <input name="url" type="url" placeholder="YouTube link" required autofocus>
+  <input name="name" placeholder="File name (default: video title)">
+  <div class="row">
+    <input name="start" placeholder="Start, e.g. 1:30">
+    <input name="end" placeholder="End, e.g. 2:45">
+  </div>
+  <button>Download</button>
+  <p id="error"></p>
+</form>
+<ul></ul>
+<script>
+  const form = document.querySelector('form');
+  const list = document.querySelector('ul');
+  const error = document.getElementById('error');
+  const symbol = { done: '✓', error: '✗' };
+  let timer;
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetch('/download', { method: 'POST', body: new URLSearchParams(new FormData(form)) });
+    error.textContent = res.ok ? '' : await res.text();
+    if (res.ok) { form.reset(); poll(); }
+  };
+
+  async function poll() {
+    clearTimeout(timer);
+    const jobs = await (await fetch('/jobs')).json();
+    list.replaceChildren(...jobs.map((j) => {
+      const li = document.createElement('li');
+      const state = symbol[j.status] ?? `${Math.round(j.progress)}%`;
+      li.textContent = `${state} ${j.message || j.label}`;
+      return li;
+    }));
+    if (jobs.some((j) => j.status === 'running')) timer = setTimeout(poll, 1000);
+  }
+  poll();
+</script>
+</body>
+</html>
