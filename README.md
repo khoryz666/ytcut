@@ -27,6 +27,16 @@ nix run .#open
 
 Videos are saved as MP4 in `~/Music`. Existing files are never overwritten.
 
+## If YouTube asks you to sign in
+
+Sometimes YouTube blocks downloads with "Sign in to confirm you're not a bot".
+
+1. Click **Sign in to YouTube** in the error message.
+2. Sign in to your Google account in the window that opens.
+3. Try the download again.
+
+You only need to do this once. The login stays in ytcut's own Chrome profile, not your normal Chrome.
+
 ## Library page
 
 - Click a name to play it on repeat.
