@@ -11,19 +11,19 @@ pub struct App {
     /// The video folder.
     pub out: PathBuf,
     pub port: String,
-    /// Chrome profile directory to read YouTube cookies from.
-    pub chrome_profile: Option<String>,
+    /// yt-dlp's `--cookies-from-browser` value, "BROWSER:PROFILE_DIR", to sign in to YouTube.
+    pub cookies: Option<String>,
     pub jobs: Mutex<Vec<Job>>,
     /// Open pages, counted by their /alive connections.
     pub pages: AtomicUsize,
 }
 
 impl App {
-    pub fn new(out: PathBuf, port: String, chrome_profile: Option<String>) -> Self {
+    pub fn new(out: PathBuf, port: String, cookies: Option<String>) -> Self {
         App {
             out,
             port,
-            chrome_profile,
+            cookies,
             jobs: Mutex::default(),
             pages: AtomicUsize::new(0),
         }

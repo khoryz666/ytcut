@@ -1,10 +1,11 @@
 //! ytcut: local web app to download YouTube videos (optionally trimmed) and play them on repeat.
 //!
-//! Usage: ytcut [--exit-when-idle] [--chrome-profile=DIR] [FOLDER]
+//! Usage: ytcut [--exit-when-idle] [--cookies-from-browser=BROWSER:PROFILE_DIR] [FOLDER]
 //! (PORT env var overrides the default 8765)
 //!
 //! With --exit-when-idle the server stops once no page is open and no download runs.
-//! With --chrome-profile, yt-dlp signs in to YouTube with that Chrome profile's cookies.
+//! With --cookies-from-browser, yt-dlp signs in to YouTube with that browser profile's
+//! cookies, e.g. `chrome:~/.local/share/ytcut/chrome/Default`.
 
 mod app;
 mod downloads;
@@ -39,11 +40,11 @@ fn main() -> io::Result<()> {
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))?;
     println!("http://127.0.0.1:{port}  ->  {}", out.display());
 
-    let chrome_profile = flags
+    let cookies = flags
         .iter()
-        .find_map(|f| f.strip_prefix("--chrome-profile="))
+        .find_map(|f| f.strip_prefix("--cookies-from-browser="))
         .map(String::from);
-    let app = Arc::new(App::new(out, port, chrome_profile));
+    let app = Arc::new(App::new(out, port, cookies));
     if flags.iter().any(|f| f == "--exit-when-idle") {
         let app = app.clone();
         thread::spawn(move || exit_when_idle(&app));

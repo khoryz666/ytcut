@@ -125,16 +125,16 @@ pub fn jobs_json(jobs: &[Job]) -> String {
     }))
 }
 
-/// yt-dlp for a single video, signed in with the Chrome profile's cookies if there are any.
+/// yt-dlp for a single video, signed in with the browser profile's cookies once it exists.
 fn yt_dlp(app: &App) -> Command {
     let mut cmd = Command::new("yt-dlp");
     cmd.arg("--no-playlist");
-    if let Some(dir) = app
-        .chrome_profile
-        .as_deref()
-        .filter(|d| Path::new(d).is_dir())
-    {
-        cmd.args(["--cookies-from-browser", &format!("chrome:{dir}")]);
+    let profile_exists = |spec: &&str| {
+        spec.split_once(':')
+            .is_some_and(|(_, dir)| Path::new(dir).is_dir())
+    };
+    if let Some(spec) = app.cookies.as_deref().filter(profile_exists) {
+        cmd.args(["--cookies-from-browser", spec]);
     }
     cmd
 }
