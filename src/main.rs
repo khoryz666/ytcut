@@ -305,8 +305,28 @@ fn info(url: &str) -> Result<String, String> {
                 finite(duration).map_or("null".into(), |d| d.to_string()),
             ),
         ])),
-        _ => Err("Could not find this video. Check the link.".into()),
+        _ => Err(String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .rfind(|l| l.starts_with("ERROR"))
+            .map_or(
+                "Could not find this video. Check the link.".into(),
+                yt_error,
+            )),
     }
+}
+
+/// "ERROR: [youtube] id: Sign in to confirm. Use --cookies ..." -> "Sign in to confirm."
+fn yt_error(line: &str) -> String {
+    let msg = line.trim_start_matches("ERROR:").trim();
+    let msg = match msg.strip_prefix('[') {
+        Some(rest) => rest.split_once(": ").map_or(msg, |(_, m)| m),
+        None => msg,
+    };
+    msg.split(" Use --cookies")
+        .next()
+        .unwrap_or(msg)
+        .trim()
+        .to_string()
 }
 
 /// Validate the form, then run yt-dlp in the background.
@@ -409,7 +429,7 @@ fn watch(stream: impl Read + Send + 'static, app: Arc<App>, id: usize) -> thread
                     .to_string_lossy()
                     .into();
             } else if line.starts_with("ERROR") {
-                job.message = line;
+                job.message = yt_error(&line);
             }
         }
     })
@@ -650,6 +670,15 @@ mod tests {
         assert_eq!(finite("NaN"), None);
         assert_eq!(finite("inf"), None);
         assert_eq!(finite("N/A"), None);
+    }
+
+    #[test]
+    fn yt_error_keeps_the_reason_only() {
+        assert_eq!(
+            yt_error("ERROR: [youtube] abc: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies"),
+            "Sign in to confirm you're not a bot."
+        );
+        assert_eq!(yt_error("ERROR: Unable to download"), "Unable to download");
     }
 
     #[test]
