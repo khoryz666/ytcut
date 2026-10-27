@@ -92,6 +92,8 @@
   .song .name { flex: 1; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; }
   .song .name:hover { color: var(--accent); }
   .song .size { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  #queue { max-height: 40vh; overflow: auto; border-top: 1px solid var(--line); padding-top: .5rem; }
+  #queue .song { cursor: grab; }
   .song button:not(.name) { padding: .2rem .55rem; font-size: .85rem; }
 </style>
 </head>
@@ -143,13 +145,14 @@
         <button id="shuffle" aria-pressed="false" title="Shuffle" aria-label="Shuffle">🔀</button>
         <button id="stop" title="Stop and close the player">✕</button>
       </div>
+      <ul id="queue" hidden></ul>
     </div>
     <div class="card">
       <div class="row">
         <input id="search" type="search" placeholder="Search videos" style="flex: 1">
         <button class="primary" id="play-selected" disabled>▶ Play selected</button>
       </div>
-      <p class="hint">Click a name to play it on repeat. To loop several, tick them and press Play selected.</p>
+      <p class="hint">Click a name to play it on repeat. Use ➕ to add it to the playlist, or tick several and press Play selected.</p>
       <label class="select-all"><input id="all" type="checkbox"> Select all</label>
       <ul id="songs"></ul>
       <p class="hint" id="empty"></p>
@@ -327,6 +330,7 @@
       box,
       button(f.name, () => playQueue([f.name]), { className: 'name', title: 'Play on repeat' }),
       el('span', { className: 'size', textContent: megabytes(f.size) }),
+      queue.includes(f.name) ? '' : button('➕', () => addToQueue(f.name), { title: 'Add to playlist', ariaLabel: 'Add to playlist' }),
       button('Rename', () => renameSong(f.name)),
       button('Delete', () => deleteSong(f.name)),
     );
@@ -376,6 +380,35 @@
     play(0);
   }
 
+  function addToQueue(name) {
+    if (!queue.length) return playQueue([name]);
+    queue.push(name);
+    showNow();
+  }
+
+  function moveInQueue(from, to) {
+    if (!Number.isInteger(from) || from === to) return;
+    const current = queue[pos];
+    queue.splice(to, 0, ...queue.splice(from, 1));
+    pos = queue.indexOf(current);
+    showNow();
+  }
+
+  /** A playlist tray row: click to play, drag to reorder, ✕ to remove. */
+  function queueRow(name, i) {
+    const li = el('li', { className: 'song' + (i === pos ? ' playing' : ''), draggable: true },
+      el('span', { className: 'size', textContent: i + 1 }),
+      button(name, () => play(i), { className: 'name', title: 'Play now' }),
+      button('✕', () => updateQueue(name), { title: 'Remove from playlist', ariaLabel: 'Remove from playlist' }),
+    );
+    li.ondragstart = (e) => e.dataTransfer.setData('text/plain', i);
+    li.ondragover = (e) => e.preventDefault();
+    li.ondrop = (e) => {
+      e.preventDefault();
+      moveInQueue(parseInt(e.dataTransfer.getData('text/plain'), 10), i);
+    };
+    return li;
+  }
 
   function play(i, time = 0) {
     pos = i;
@@ -423,7 +456,8 @@
       : !many ? `${name} · on repeat`
       : `${name} · ${pos + 1} of ${queue.length} · ${repeatOne ? 'repeating this one' : 'looping'}`;
     $('#now-nav').textContent = name ? `♪ ${name}` : '';
-    for (const id of ['#prev', '#next', '#repeat', '#shuffle']) $(id).hidden = !many;
+    for (const id of ['#prev', '#next', '#repeat', '#shuffle', '#queue']) $(id).hidden = !many;
+    $('#queue').replaceChildren(...queue.map(queueRow));
     renderSongs();
   }
 
