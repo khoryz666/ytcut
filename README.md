@@ -8,7 +8,7 @@ Double-click **ytcut** on the Desktop. It starts the app for `~/Music` and opens
 
 The window uses its own Chrome profile in `~/.local/share/ytcut/chrome`. It does not touch your normal Chrome.
 
-The app stops when you close the window. If you double-click while it is open, you get a second window. The app stops when the last one closes.
+The app stops a few seconds after you close the last window. If a download is still running, it finishes first.
 
 Only one copy of the app can run at a time.
 
@@ -64,7 +64,7 @@ cargo run -- ~/Music
 
 The server uses only the Rust standard library. The page is plain HTML and JavaScript inside the binary.
 
-After changing the code, close the app window. The next launch uses the new version.
+After changing the code, close the app window and wait a few seconds. The next launch uses the new version.
 
 Run `git add` on new files first. Nix only sees files that git tracks.
 
