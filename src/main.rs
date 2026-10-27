@@ -27,7 +27,7 @@ const VIDEO_TYPES: [(&str, &str); 5] = [
 struct Job {
     label: String,
     status: &'static str,
-    progress: f32,
+    progress: f64,
     message: String,
 }
 
@@ -207,9 +207,7 @@ fn info(url: &str) -> Result<String, String> {
             ("title", json_str(title)),
             (
                 "duration",
-                duration
-                    .parse::<f64>()
-                    .map_or("null".into(), |d| d.to_string()),
+                finite(duration).map_or("null".into(), |d| d.to_string()),
             ),
         ])),
         _ => Err("Could not find this video. Check the link.".into()),
@@ -303,14 +301,12 @@ fn download(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> Re
 /// Feed yt-dlp output lines into the job: progress, final file path, or last error.
 fn watch(stream: impl Read + Send + 'static, app: Arc<App>, id: usize) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        // Read bytes, not lines: a non-UTF-8 line must not stop us draining the pipe.
+        for line in BufReader::new(stream).split(b'\n').map_while(Result::ok) {
+            let line = String::from_utf8_lossy(&line).into_owned();
             let job = &mut app.jobs.lock().unwrap()[id];
             if let Some(p) = line.strip_prefix("PROGRESS ") {
-                job.progress = p
-                    .trim()
-                    .trim_end_matches('%')
-                    .parse()
-                    .unwrap_or(job.progress);
+                job.progress = finite(p.trim().trim_end_matches('%')).unwrap_or(job.progress);
             } else if line.starts_with('/') {
                 job.message = Path::new(&line)
                     .file_name()
@@ -423,6 +419,10 @@ fn clean_name(name: &str) -> String {
     }
     name = &name[..end];
     name.trim_end().to_string()
+}
+
+fn finite(s: &str) -> Option<f64> {
+    s.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
 /// Parse "", "90", "1:30" or "1:02:03.5" into seconds.
