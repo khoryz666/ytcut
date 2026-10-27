@@ -32,6 +32,10 @@
             server=$!
             trap 'kill "$server" 2>/dev/null || true' EXIT INT TERM HUP
             for _ in $(seq 50); do up && break; sleep 0.1; done
+            # Our server exited: another one already runs, so it is not ours to stop.
+            if ! kill -0 "$server" 2>/dev/null; then
+              trap - EXIT INT TERM HUP
+            fi
             chrome
           '';
         };
