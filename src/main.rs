@@ -14,6 +14,8 @@ use std::{env, thread};
 const PAGE: &str = include_str!("index.html");
 const JSON: &str = "application/json";
 const TEXT: &str = "text/plain; charset=utf-8";
+/// Leaves room for an extension and yt-dlp's temporary suffixes within 255 bytes.
+const MAX_NAME_BYTES: usize = 200;
 const VIDEO_TYPES: [(&str, &str); 5] = [
     ("mp4", "video/mp4"),
     ("m4v", "video/mp4"),
@@ -218,7 +220,14 @@ fn info(url: &str) -> Result<String, String> {
 fn download(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> Result<(), String> {
     check_url(url)?;
     let name = clean_name(name);
-    if !name.is_empty() && app.out.join(format!("{name}.mp4")).exists() {
+    let taken = app.out.join(format!("{name}.mp4")).exists()
+        || app
+            .jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|j| j.status == "running" && j.label == name);
+    if !name.is_empty() && taken {
         return Err(format!("{name}.mp4 already exists. Pick another name."));
     }
     if let (Some(s), Some(e)) = (seconds(start)?, seconds(end)?) {
@@ -229,7 +238,8 @@ fn download(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> Re
 
     // `%` would be read as a yt-dlp output template field.
     let template = if name.is_empty() {
-        "%(title)s".into()
+        // Cut long titles to fit the 255-byte file name limit.
+        format!("%(title).{MAX_NAME_BYTES}B")
     } else {
         name.replace('%', "%%")
     };
@@ -388,7 +398,8 @@ fn check_url(url: &str) -> Result<(), String> {
     }
 }
 
-/// Replace characters that are invalid in file names.
+/// A file name without extension: invalid characters replaced, a typed video extension
+/// dropped, and cut to fit the file name length limit.
 fn clean_name(name: &str) -> String {
     let name: String = name
         .chars()
@@ -400,7 +411,18 @@ fn clean_name(name: &str) -> String {
             }
         })
         .collect();
-    name.trim().trim_matches('.').to_string()
+    let name = name.trim();
+    let name = match name.rsplit_once('.') {
+        Some((base, ext)) if VIDEO_TYPES.iter().any(|(e, _)| ext.eq_ignore_ascii_case(e)) => base,
+        _ => name,
+    };
+    let mut name = name.trim().trim_matches('.');
+    let mut end = name.len().min(MAX_NAME_BYTES);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    name = &name[..end];
+    name.trim_end().to_string()
 }
 
 /// Parse "", "90", "1:30" or "1:02:03.5" into seconds.
