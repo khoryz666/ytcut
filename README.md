@@ -80,16 +80,16 @@ Sometimes YouTube stops downloads with "Sign in to confirm you're not a bot".
 
 You only do this once. The login stays in ytcut's own browser profile, not your normal one.
 
-## Library and playlist
+## Playlist page
+
+The Playlist page shows the songs you are playing. Drag a song by its ⠿ handle to move it; a line shows where it will land. Hover a song and click ✕ to remove it. The playlist is not saved.
+
+Your library hides at the left edge. Hover **🎵 Library** to slide it out, or click it.
 
 - Click a song to play it. If a playlist is playing, the song joins it right after the current one.
 - Click ➕ to add a song to the end of the playlist. Or tick several songs and click **Play selected** to start a new playlist.
 - Click ⋮ to rename or delete a song.
 - Use the search box to find a song.
-
-Once the playlist has songs, it fills the Library page and the song list folds away. Click **Add songs from your library** to open the list again.
-
-In the playlist, drag a song by its ⠿ handle to move it. A line shows where it will land. Hover a song and click ✕ to remove it. The playlist is not saved.
 
 ## Player
 
@@ -100,7 +100,7 @@ The player sits at the bottom of the window. It plays audio only, so your graphi
 | ⏮ ⏸ ⏭ | Previous, pause or play, next |
 | 🔂 | Repeat the current song |
 | 🔀 | Shuffle |
-| ☰ | Go to the playlist |
+| ☰ | Go to the Playlist page |
 | 🎬 | Show or hide the video |
 | ✕ | Stop and clear the playlist |
 
