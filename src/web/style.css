@@ -206,13 +206,13 @@ body:not(.is-playing) .eq i { animation-play-state: paused; }
 .controls { display: flex; align-items: center; gap: .1rem; }
 button.play { background: var(--brand); color: #fff; }
 button.play:hover:not(:disabled) { background: var(--brand); filter: brightness(1.05); }
-.track { flex: 1; min-width: 0; display: grid; gap: .1rem; }
-.track strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.now-info { flex: 1; min-width: 0; display: grid; gap: .1rem; }
+.now-info strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .seek { display: flex; align-items: center; gap: .5rem; font-variant-numeric: tabular-nums; }
 .seek input { flex: 1; min-width: 0; margin: 0; }
 
 @media (max-width: 40rem) {
   .bar { border-radius: var(--radius); flex-wrap: wrap; justify-content: center; }
-  .track { flex-basis: 100%; order: -1; }
+  .now-info { flex-basis: 100%; order: -1; }
   .preview img { width: 5.5rem; }
 }
