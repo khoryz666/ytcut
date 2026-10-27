@@ -1,0 +1,99 @@
+/* ---------- theme ---------- */
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e2e2e6;
+  --accent: #e0312b; --accent-soft: #fdebea;
+  font: 15px/1.45 system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151517; --card: #202023; --text: #f2f2f4; --muted: #9b9ba1; --line: #34343a; --accent-soft: #3b1f1e; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+[hidden] { display: none !important; }
+ul { list-style: none; margin: 0; padding: 0; }
+a { color: var(--accent); }
+
+/* ---------- layout ---------- */
+header {
+  position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 1rem;
+  padding: .6rem 1rem; background: var(--card); border-bottom: 1px solid var(--line);
+}
+nav { display: flex; gap: .25rem; }
+nav a { padding: .4rem 1rem; border-radius: 999px; color: inherit; text-decoration: none; font-weight: 500; }
+nav a[aria-current] { background: var(--accent); color: #fff; }
+#now-nav { margin-left: auto; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+main { max-width: 50rem; margin: 1.5rem auto; padding: 0 1rem; }
+section { display: grid; gap: 1rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; display: grid; gap: .8rem; }
+.row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: .85rem; font-weight: 400; margin: 0; }
+.error { color: var(--accent); margin: 0; }
+.hint:empty, .error:empty { display: none; }
+
+/* ---------- controls ---------- */
+label { display: grid; gap: .3rem; font-weight: 500; }
+input, button { font: inherit; color: inherit; }
+input:not([type=checkbox]) {
+  width: 100%; min-width: 0; padding: .55rem .7rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+button { padding: .45rem .9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
+
+/* ---------- download: part slider ---------- */
+/* Two range inputs stacked on one track; only their handles take the mouse. */
+#cut { display: grid; gap: .4rem; }
+.range { --thumb: 18px; position: relative; height: 26px; }
+.range::before, .range .fill {
+  content: ''; position: absolute; top: 11px; height: 4px; border-radius: 2px;
+}
+.range::before { left: 0; right: 0; background: var(--line); }
+.range .fill {
+  background: var(--accent);
+  left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--a, 0));
+  right: calc(var(--thumb) / 2 + (100% - var(--thumb)) * (1 - var(--b, 1)));
+}
+.range input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  border: 0; background: none; pointer-events: none; appearance: none; -webkit-appearance: none;
+}
+.range input::-webkit-slider-runnable-track { height: 100%; background: none; }
+.range input::-moz-range-track { background: none; }
+.range input::-webkit-slider-thumb {
+  -webkit-appearance: none; margin-top: 4px;
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--card); cursor: grab; pointer-events: auto;
+}
+.range input::-moz-range-thumb {
+  width: var(--thumb); height: var(--thumb); border-radius: 50%; box-sizing: border-box;
+  background: var(--accent); border: 2px solid var(--card); cursor: grab; pointer-events: auto;
+}
+.range input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- download: progress ---------- */
+#jobs li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; }
+#jobs li > :first-child { flex: 1; overflow-wrap: anywhere; }
+progress { width: 8rem; accent-color: var(--accent); }
+
+/* ---------- library: player and playlist ---------- */
+video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; }
+#now { flex: 1; }
+#queue { max-height: 40vh; overflow: auto; border-top: 1px solid var(--line); padding-top: .5rem; }
+#queue .song { cursor: grab; }
+
+/* ---------- library: song list ---------- */
+#search { flex: 1; width: auto; }
+.select-all { display: flex; align-items: center; gap: .5rem; font-weight: 400; padding: 0 .5rem; }
+.song { display: flex; align-items: center; gap: .6rem; padding: .4rem .5rem; border-radius: 8px; }
+.song:hover { background: var(--bg); }
+.song.playing { background: var(--accent-soft); }
+.song .name { flex: 1; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; }
+.song .name:hover { color: var(--accent); }
+.song .size { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.song button:not(.name) { padding: .2rem .55rem; font-size: .85rem; }

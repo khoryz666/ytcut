@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ytcut</title>
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/js/main.js"></script>
+</head>
+<body>
+<header>
+  <nav>
+    <a href="#download">Download</a>
+    <a href="#library">Library</a>
+  </nav>
+  <span id="now-nav"></span>
+</header>
+
+<main>
+  <section id="download" hidden>
+    <form class="card" id="dl-form">
+      <label>YouTube link
+        <input name="url" type="url" required autofocus placeholder="https://www.youtube.com/watch?v=…">
+      </label>
+      <p class="hint" id="info"></p>
+      <label>File name
+        <input name="name" placeholder="Same as the video title">
+      </label>
+      <div id="cut" hidden>
+        <div class="row">
+          <strong>Part to download</strong>
+          <span class="hint" id="cut-label"></span>
+        </div>
+        <div class="range">
+          <div class="fill"></div>
+          <input name="start" type="range" min="0" step="1" aria-label="Start">
+          <input name="end" type="range" min="0" step="1" aria-label="End">
+        </div>
+        <p class="hint">Drag the handles to keep only part. Arrow keys move 1 second.</p>
+      </div>
+      <button class="primary">Download</button>
+      <p class="error" id="dl-error"></p>
+    </form>
+    <ul class="card" id="jobs" hidden></ul>
+  </section>
+
+  <section id="library" hidden>
+    <div class="card" id="player" hidden>
+      <video controls></video>
+      <div class="row">
+        <span class="hint" id="now"></span>
+        <button id="prev" title="Previous">⏮</button>
+        <button id="next" title="Next">⏭</button>
+        <button id="repeat" aria-pressed="false" title="Repeat this video" aria-label="Repeat this video">🔂</button>
+        <button id="shuffle" aria-pressed="false" title="Shuffle" aria-label="Shuffle">🔀</button>
+        <button id="stop" title="Stop and close the player">✕</button>
+      </div>
+      <ul id="queue" hidden></ul>
+    </div>
+    <div class="card">
+      <div class="row">
+        <input id="search" type="search" placeholder="Search videos">
+        <button class="primary" id="play-selected" disabled>▶ Play selected</button>
+      </div>
+      <p class="hint">Click a name to play it on repeat. Use ➕ to add it to the playlist, or tick several and press Play selected.</p>
+      <label class="select-all"><input id="all" type="checkbox"> Select all</label>
+      <ul id="songs"></ul>
+      <p class="hint" id="empty"></p>
+      <p class="error" id="lib-error"></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>
