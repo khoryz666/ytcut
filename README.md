@@ -8,7 +8,7 @@ Double-click **ytcut** on the Desktop. It starts the app for `~/Music` and opens
 
 The window uses its own Chrome profile in `~/.local/share/ytcut/chrome`. It does not touch your normal Chrome.
 
-The app keeps running after you close the window. Double-click again to reopen it.
+The app stops when you close the window. If you double-click while it is open, you get a second window. The app stops when the last one closes.
 
 From a terminal:
 
@@ -62,11 +62,7 @@ cargo run -- ~/Music
 
 The server uses only the Rust standard library. The page is plain HTML and JavaScript inside the binary.
 
-After changing the code, stop the running app so the next launch uses the new version:
-
-```sh
-pkill -f ytcut-wrapped
-```
+After changing the code, close the app window. The next launch uses the new version.
 
 Run `git add` on new files first. Nix only sees files that git tracks.
 
