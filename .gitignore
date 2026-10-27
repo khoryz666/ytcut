@@ -1,0 +1,34 @@
+# video
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.flv
+*.m4v
+*.3gp
+*.ts
+
+# audio
+*.mp3
+*.m4a
+*.aac
+*.opus
+*.ogg
+*.oga
+*.wav
+*.flac
+*.wma
+
+# yt-dlp partial / temp files
+*.part
+*.ytdl
+*.temp.*
+
+# nix / direnv
+result
+result-*
+.direnv/
+
+# rust
+target/
