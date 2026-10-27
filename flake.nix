@@ -73,6 +73,54 @@
           '';
         };
 
+        # Add ytcut to the app menu and the desktop. Run from the ytcut folder.
+        install = pkgs.writeShellApplication {
+          name = "ytcut-install";
+          runtimeInputs = [ pkgs.coreutils pkgs.gnugrep ];
+          text = ''
+            repo=$PWD
+            if [ ! -f "$repo/flake.nix" ] || ! grep -q ytcut "$repo/flake.nix"; then
+              echo "Run this from the ytcut folder: nix run .#install" >&2
+              exit 1
+            fi
+            nix=$(command -v nix)
+            data=''${XDG_DATA_HOME:-$HOME/.local/share}
+
+            install -Dm644 ${./src/web/logo.svg} "$data/icons/hicolor/scalable/apps/ytcut.svg"
+            entry="$data/applications/ytcut.desktop"
+            mkdir -p "$(dirname "$entry")"
+            cat > "$entry" <<EOF
+            [Desktop Entry]
+            Type=Application
+            Name=ytcut
+            Comment=Download YouTube songs and play them on repeat
+            Exec="$nix" --extra-experimental-features "nix-command flakes" run "$repo#open"
+            Icon=ytcut
+            Terminal=false
+            Categories=AudioVideo;Audio;
+            StartupWMClass=ytcut
+            EOF
+            chmod +x "$entry"
+            if command -v update-desktop-database >/dev/null; then
+              update-desktop-database "$data/applications" || true
+            fi
+            echo "Added ytcut to the app menu."
+
+            desktop=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
+            if [ -d "$desktop" ] && [ "$desktop" != "$HOME" ]; then
+              shortcut="$desktop/ytcut.desktop"
+              install -m755 "$entry" "$shortcut"
+              # Let file managers launch it without asking: GNOME, Cinnamon and MATE use
+              # "trusted", XFCE a checksum, and KDE only needs the executable bit.
+              if command -v gio >/dev/null; then
+                gio set "$shortcut" metadata::trusted true 2>/dev/null || true
+                gio set -t string "$shortcut" metadata::xfce-exe-checksum \
+                  "$(sha256sum "$shortcut" | cut -d' ' -f1)" 2>/dev/null || true
+              fi
+              echo "Added ytcut to $desktop."
+            fi
+          '';
+        };
       });
 
       apps = forAllSystems (pkgs:
@@ -82,7 +130,7 @@
             program = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
           };
         in
-        { default = app "open"; open = app "open"; });
+        { default = app "open"; open = app "open"; install = app "install"; });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
