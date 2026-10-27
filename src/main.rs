@@ -603,3 +603,57 @@ fn json_str(s: &str) -> String {
     o.push('"');
     o
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_name_strips_bad_chars_and_typed_extension() {
+        assert_eq!(clean_name(" a/b:c.MP4 "), "a_b_c");
+        assert_eq!(clean_name("song.mp3"), "song.mp3");
+        assert_eq!(clean_name("..hidden.."), "hidden");
+        assert_eq!(clean_name("50% off"), "50% off");
+    }
+
+    #[test]
+    fn clean_name_fits_length_limit_on_char_boundary() {
+        let name = clean_name(&"歌".repeat(100));
+        assert!(name.len() <= MAX_NAME_BYTES);
+        assert_eq!(name, "歌".repeat(MAX_NAME_BYTES / 3));
+    }
+
+    #[test]
+    fn seconds_parses_clock_times() {
+        assert_eq!(seconds(""), Ok(None));
+        assert_eq!(seconds("90"), Ok(Some(90.0)));
+        assert_eq!(seconds("1:30"), Ok(Some(90.0)));
+        assert_eq!(seconds("1:02:03.5"), Ok(Some(3723.5)));
+        for bad in ["-1", "inf", "NaN", "1:2:3:4", "1::2"] {
+            assert!(seconds(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn byte_range_handles_open_suffix_and_invalid() {
+        assert_eq!(byte_range("bytes=0-", 10), Some((0, 9)));
+        assert_eq!(byte_range("bytes=2-4", 10), Some((2, 4)));
+        assert_eq!(byte_range("bytes=5-99", 10), Some((5, 9)));
+        assert_eq!(byte_range("bytes=-3", 10), Some((7, 9)));
+        assert_eq!(byte_range("bytes=20-", 10), None);
+        assert_eq!(byte_range("bytes=0-", 0), None);
+    }
+
+    #[test]
+    fn finite_rejects_nan_and_infinity() {
+        assert_eq!(finite("12.5"), Some(12.5));
+        assert_eq!(finite("NaN"), None);
+        assert_eq!(finite("inf"), None);
+        assert_eq!(finite("N/A"), None);
+    }
+
+    #[test]
+    fn decode_handles_plus_percent_and_utf8() {
+        assert_eq!(decode("a+b%2B%E6%AD%8C%zz"), "a b+歌%zz");
+    }
+}
