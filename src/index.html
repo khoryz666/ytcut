@@ -31,7 +31,6 @@
   section { display: grid; gap: 1rem; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; display: grid; gap: .8rem; }
   .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-  .row > label { flex: 1; min-width: 8rem; }
   label { display: grid; gap: .3rem; font-weight: 500; }
   .hint { color: var(--muted); font-size: .85rem; font-weight: 400; margin: 0; }
   .error { color: var(--accent); margin: 0; }
@@ -44,6 +43,35 @@
     border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
   }
   input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+
+  /* Two range inputs stacked on one track; only their handles take the mouse. */
+  #cut { display: grid; gap: .4rem; }
+  .range { --thumb: 18px; position: relative; height: 26px; }
+  .range::before, .range .fill {
+    content: ''; position: absolute; top: 11px; height: 4px; border-radius: 2px;
+  }
+  .range::before { left: 0; right: 0; background: var(--line); }
+  .range .fill {
+    background: var(--accent);
+    left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--a, 0));
+    right: calc(var(--thumb) / 2 + (100% - var(--thumb)) * (1 - var(--b, 1)));
+  }
+  .range input {
+    position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+    border: 0; background: none; pointer-events: none; appearance: none; -webkit-appearance: none;
+  }
+  .range input::-webkit-slider-runnable-track { height: 100%; background: none; }
+  .range input::-moz-range-track { background: none; }
+  .range input::-webkit-slider-thumb {
+    -webkit-appearance: none; margin-top: 4px;
+    width: var(--thumb); height: var(--thumb); border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--card); cursor: grab; pointer-events: auto;
+  }
+  .range input::-moz-range-thumb {
+    width: var(--thumb); height: var(--thumb); border-radius: 50%; box-sizing: border-box;
+    background: var(--accent); border: 2px solid var(--card); cursor: grab; pointer-events: auto;
+  }
+  .range input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
   button { padding: .45rem .9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--muted); }
   button:disabled { opacity: .5; cursor: default; }
@@ -86,11 +114,18 @@
       <label>File name
         <input name="name" placeholder="Same as the video title">
       </label>
-      <div class="row">
-        <label>Start <input name="start" placeholder="0:00"></label>
-        <label>End <input name="end" placeholder="End of video"></label>
+      <div id="cut" hidden>
+        <div class="row">
+          <strong>Part to download</strong>
+          <span class="hint" id="cut-label"></span>
+        </div>
+        <div class="range">
+          <div class="fill"></div>
+          <input name="start" type="range" min="0" step="1" aria-label="Start">
+          <input name="end" type="range" min="0" step="1" aria-label="End">
+        </div>
+        <p class="hint">Drag the handles to keep only part. Arrow keys move 1 second.</p>
       </div>
-      <p class="hint">To keep only part of the video, set a start or end time, like 1:30. Leave both empty for the whole video.</p>
       <button class="primary">Download</button>
       <p class="error" id="dl-error"></p>
     </form>
@@ -172,24 +207,57 @@
   async function lookup() {
     const url = infoUrl = field.url.value.trim();
     field.name.placeholder = 'Same as the video title';
-    field.end.placeholder = 'End of video';
+    showCut(null);
     $('#info').textContent = url && field.url.validity.valid ? 'Looking up video…' : '';
     if (!$('#info').textContent) return;
     try {
       const info = await request('/info?' + new URLSearchParams({ url }));
       if (url !== infoUrl) return;
-      $('#info').textContent = info.title + (info.duration ? ` · ${clock(info.duration)}` : '');
+      $('#info').textContent = info.title;
       field.name.placeholder = info.title;
-      if (info.duration) field.end.placeholder = clock(info.duration);
+      showCut(info.duration);
     } catch (e) {
       if (url === infoUrl) $('#info').replaceChildren(...errorNodes(e.message));
     }
   }
 
+  /** Show the range slider for a video of this many seconds, or hide it when unknown. */
+  function showCut(duration) {
+    const max = Math.floor(duration || 0);
+    $('#cut').hidden = max < 2;
+    for (const input of [field.start, field.end]) input.max = max;
+    field.start.value = 0;
+    field.end.value = max;
+    drawCut();
+  }
+
+  /** Keep start before end, then update the label and the filled part of the track. */
+  function drawCut(moved) {
+    const max = +field.end.max;
+    if (+field.start.value >= +field.end.value) {
+      if (moved === field.start) field.start.value = +field.end.value - 1;
+      else field.end.value = +field.start.value + 1;
+    }
+    const start = +field.start.value, end = +field.end.value;
+    $('#cut-label').textContent = start === 0 && end === max
+      ? `Whole video · ${clock(max)}`
+      : `${clock(start)} – ${clock(end)} · ${clock(end - start)}`;
+    $('.range').style.setProperty('--a', max && start / max);
+    $('.range').style.setProperty('--b', max && end / max);
+    // Both handles can meet; keep the one that can still move on top.
+    field.start.style.zIndex = start > max / 2 ? 1 : '';
+  }
+  field.start.oninput = () => drawCut(field.start);
+  field.end.oninput = () => drawCut(field.end);
+
   form.onsubmit = async (e) => {
     e.preventDefault();
+    // Untouched ends mean no cut, which also skips re-encoding.
+    const data = new FormData(form);
+    if ($('#cut').hidden || +field.start.value === 0) data.delete('start');
+    if ($('#cut').hidden || field.end.value === field.end.max) data.delete('end');
     try {
-      await request('/download', new FormData(form));
+      await request('/download', data);
       form.reset();
       lookup();
       $('#dl-error').textContent = '';
@@ -306,6 +374,7 @@
     queue = names;
     play(0);
   }
+
 
   function play(i, time = 0) {
     pos = i;
