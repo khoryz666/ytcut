@@ -35,7 +35,9 @@ impl App {
             || self.jobs.lock().unwrap().iter().any(|j| j.is_running())
     }
 
-    /// Only our own page may call us: blocks other websites (CSRF) and DNS rebinding.
+    /// Only our own page may call us: blocks other websites (CSRF, embedding our files)
+    /// and DNS rebinding. Browsers mark every request with Sec-Fetch-Site; tools like
+    /// curl send none.
     pub fn trusted(&self, req: &Request) -> bool {
         let hosts = [
             format!("127.0.0.1:{}", self.port),
@@ -46,5 +48,8 @@ impl App {
             && req
                 .header("origin")
                 .is_none_or(|o| hosts.iter().any(|ok| o == format!("http://{ok}")))
+            && req
+                .header("sec-fetch-site")
+                .is_none_or(|s| s == "same-origin" || s == "none")
     }
 }
