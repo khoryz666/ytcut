@@ -213,7 +213,7 @@
 
   /* ---------- library ---------- */
   const video = $('video');
-  let files = [], selected = new Set(), queue = [], pos = 0, shuffle = false;
+  let files = [], selected = new Set(), queue = [], pos = 0, shuffle = false, failures = 0;
 
   async function loadFiles() {
     try {
@@ -348,7 +348,13 @@
   }
 
   video.onended = () => step(1);
-  video.onerror = () => { if (queue.length) $('#now').textContent = `Can't play ${queue[pos]} in the browser.`; };
+  video.onplaying = () => { failures = 0; };
+  video.onerror = () => {
+    if (!queue.length) return;
+    $('#now').textContent = `Can't play ${queue[pos]}.`;
+    // Skip to the next song, but stop once every song in the loop has failed.
+    if (queue.length > 1 && ++failures < queue.length) setTimeout(() => step(1), 1500);
+  };
   $('#prev').onclick = () => step(-1);
   $('#next').onclick = () => step(1);
   $('#stop').onclick = stop;
