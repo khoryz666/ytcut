@@ -1,5 +1,7 @@
 //! yt-dlp: look up a video, download it in the background, and track progress.
 
+use std::collections::HashSet;
+use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -14,6 +16,8 @@ use crate::library::{clean_name, MAX_NAME_BYTES};
 pub enum Status {
     Running,
     Done,
+    /// The file was already there, so nothing was downloaded.
+    Exists,
     Error,
 }
 
@@ -99,13 +103,21 @@ pub fn start(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> R
         }
     }
 
+    // yt-dlp quietly skips a file that is already there; remember what was.
+    let before: HashSet<String> = fs::read_dir(&app.out)
+        .map(|dir| {
+            dir.flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
     let child = download_command(app, &name, start, end)
         .arg(url)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Could not run yt-dlp: {e}"))?;
-    track(app, child, or(&name, url).to_string());
+    track(app, child, or(&name, url).to_string(), before);
     Ok(())
 }
 
@@ -114,6 +126,7 @@ pub fn jobs_json(jobs: &[Job]) -> String {
         let status = match j.status {
             Status::Running => "running",
             Status::Done => "done",
+            Status::Exists => "exists",
             Status::Error => "error",
         };
         json::object(&[
@@ -174,7 +187,8 @@ fn download_command(app: &App, name: &str, start: &str, end: &str) -> Command {
 }
 
 /// Add a job for the running download and update it until yt-dlp exits.
-fn track(app: &Arc<App>, mut child: Child, label: String) {
+/// `before` holds the folder's file names from before the download.
+fn track(app: &Arc<App>, mut child: Child, label: String, before: HashSet<String>) {
     let id = {
         let mut jobs = app.jobs.lock().unwrap();
         jobs.push(Job {
@@ -194,7 +208,11 @@ fn track(app: &Arc<App>, mut child: Child, label: String) {
         readers.into_iter().for_each(|r| drop(r.join()));
         let ok = child.wait().is_ok_and(|s| s.success());
         let job = &mut app.jobs.lock().unwrap()[id];
-        job.status = if ok { Status::Done } else { Status::Error };
+        job.status = match (ok, before.contains(&job.message)) {
+            (false, _) => Status::Error,
+            (true, true) => Status::Exists,
+            (true, false) => Status::Done,
+        };
         if ok {
             job.progress = 100.0;
         }

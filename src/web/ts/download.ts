@@ -61,8 +61,9 @@ form.onsubmit = async (e) => {
 function jobRow(job: Job) {
   const state = job.status === 'running' ? el('progress', { max: 100, value: job.progress })
     : job.status === 'done' ? el('span', { className: 'hint', textContent: 'Saved ✓' })
+    : job.status === 'exists' ? el('span', { className: 'hint', textContent: 'Already in your library' })
     : el('span', { className: 'error' }, ...errorNodes(job.message || 'Download failed'));
-  const name = (job.status === 'done' && job.message) || job.label;
+  const name = (job.status !== 'error' && job.message) || job.label;
   return el('li', {}, el('span', { textContent: name }), state);
 }
 

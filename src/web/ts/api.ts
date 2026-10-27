@@ -14,7 +14,8 @@ export interface VideoInfo {
 export interface Job {
   /** The chosen file name, or the link when the video title is used. */
   label: string;
-  status: 'running' | 'done' | 'error';
+  /** "exists": the file was already there, so nothing was downloaded. */
+  status: 'running' | 'done' | 'exists' | 'error';
   progress: number;
   /** The saved file name, or the error. */
   message: string;
