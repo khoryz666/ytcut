@@ -37,7 +37,7 @@ Without one of these browsers, ytcut opens in your default browser. Downloads ma
 ### 3. Get ytcut
 
 ```sh
-git clone <this repository> ~/ytcut
+git clone https://github.com/khoryz666/ytcut.git ~/ytcut
 cd ~/ytcut
 ```
 
