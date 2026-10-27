@@ -35,6 +35,7 @@
   label { display: grid; gap: .3rem; font-weight: 500; }
   .hint { color: var(--muted); font-size: .85rem; font-weight: 400; margin: 0; }
   .error { color: var(--accent); margin: 0; }
+  a { color: var(--accent); }
   .hint:empty, .error:empty { display: none; }
 
   input, button { font: inherit; color: inherit; }
@@ -136,6 +137,12 @@
     return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
   };
   const megabytes = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
+  /** Error message nodes, with a sign-in link when YouTube asks to prove you are not a bot. */
+  const errorNodes = (msg) => /sign in/i.test(msg)
+    ? ['YouTube wants you to sign in. ',
+       el('a', { href: 'https://www.youtube.com/', target: '_blank', textContent: 'Sign in to YouTube' }),
+       ', then try again.']
+    : [msg];
 
   /** GET when data is omitted, POST form fields otherwise. Throws the server's message on error. */
   async function request(path, data) {
@@ -175,7 +182,7 @@
       field.name.placeholder = info.title;
       if (info.duration) field.end.placeholder = clock(info.duration);
     } catch (e) {
-      if (url === infoUrl) $('#info').textContent = e.message;
+      if (url === infoUrl) $('#info').replaceChildren(...errorNodes(e.message));
     }
   }
 
@@ -200,10 +207,9 @@
       el('span', { textContent: (j.status === 'done' && j.message) || j.label }),
       j.status === 'running'
         ? el('progress', { max: 100, value: j.progress })
-        : el('span', {
-            className: j.status === 'done' ? 'hint' : 'error',
-            textContent: j.status === 'done' ? 'Saved ✓' : j.message || 'Download failed',
-          }),
+        : j.status === 'done'
+          ? el('span', { className: 'hint', textContent: 'Saved ✓' })
+          : el('span', { className: 'error' }, ...errorNodes(j.message || 'Download failed')),
     )));
     const now = jobs.filter((j) => j.status === 'running').length;
     if (now < running) loadFiles();
