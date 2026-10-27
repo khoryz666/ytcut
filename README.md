@@ -20,9 +20,9 @@ nix run .#open
 
 ## Download page
 
-1. Paste a YouTube link. The title and length appear below it.
+1. Paste a YouTube link. The title appears below it.
 2. Type a file name. Leave it empty to use the video title.
-3. To keep only part of the video, set Start and End, like `1:30`. Leave them empty for the whole video.
+3. To keep only part of the video, drag the two handles of the slider. Arrow keys move them by 1 second. Leave them at the ends for the whole video.
 4. Click Download.
 
 Videos are saved as MP4 in `~/Music`. Existing files are never overwritten.
@@ -40,8 +40,9 @@ You only need to do this once. The login stays in ytcut's own Chrome profile, no
 ## Library page
 
 - Click a name to play it on repeat.
-- To loop several songs, tick them and click **Play selected**.
-- Use ⏮ ⏭ to skip, and **Shuffle** to play in random order.
+- Click ➕ to add a song to the playlist. Or tick several songs and click **Play selected**.
+- The playlist shows below the player. Click a song to play it, drag to reorder, and ✕ to remove. It is not saved.
+- Use ⏮ ⏭ to skip, 🔂 to repeat the current song, and 🔀 to shuffle.
 - Use the search box to find a video.
 - **Rename** and **Delete** are on each row. Delete cannot be undone.
 
