@@ -6,6 +6,8 @@ import * as player from './player.js';
 
 const search = $<HTMLInputElement>('#search'), all = $<HTMLInputElement>('#all');
 const playSelected = $<HTMLButtonElement>('#play-selected'), error = $('#lib-error');
+/** Room the ⋮ menu needs below its button, in pixels. */
+const MENU_HEIGHT = 110;
 let files: VideoFile[] = [];
 let selected = new Set<string>();
 
@@ -63,6 +65,13 @@ function menu(name: string) {
   details.append(el('div', { className: 'menu-items' },
     item('Rename', renameSong),
     item('Delete', deleteSong, { className: 'danger' })));
+  // Open upward when the menu would end up under the player dock or off screen.
+  details.ontoggle = () => {
+    if (!details.open) return;
+    const dock = $('#dock');
+    const floor = dock.hidden ? innerHeight : dock.getBoundingClientRect().top;
+    details.classList.toggle('up', floor - details.getBoundingClientRect().bottom < MENU_HEIGHT);
+  };
   return details;
 }
 

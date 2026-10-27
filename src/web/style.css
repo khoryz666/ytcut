@@ -133,6 +133,7 @@ progress { width: 8rem; accent-color: var(--accent); }
 .song .menu-items button { text-align: left; padding: .45rem .7rem; border: 0; }
 .song .menu-items button:hover { background: var(--bg); border: 0; }
 .song .menu-items .danger { color: var(--danger); }
+.menu.up .menu-items { top: auto; bottom: calc(100% + 4px); }
 
 /* ---------- player dock ---------- */
 #dock {
