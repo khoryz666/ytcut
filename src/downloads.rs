@@ -32,7 +32,7 @@ impl Job {
     }
 }
 
-/// Title and duration as JSON, for the download form preview.
+/// Title, duration and thumbnail URL as JSON, for the download form preview.
 pub fn info(app: &App, url: &str) -> Result<String, String> {
     check_url(url)?;
     let out = yt_dlp(app)
@@ -42,18 +42,31 @@ pub fn info(app: &App, url: &str) -> Result<String, String> {
             "duration",
             "--print",
             "title",
+            "--print",
+            "thumbnail",
             url,
         ])
         .output()
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
-    match (out.status.success(), lines.next(), lines.next()) {
-        (true, Some(duration), Some(title)) => Ok(json::object(&[
+    match (
+        out.status.success(),
+        lines.next(),
+        lines.next(),
+        lines.next(),
+    ) {
+        (true, Some(duration), Some(title), thumbnail) => Ok(json::object(&[
             ("title", json::string(title)),
             (
                 "duration",
                 finite(duration).map_or("null".into(), |d| d.to_string()),
+            ),
+            (
+                "thumbnail",
+                thumbnail
+                    .filter(|t| t.starts_with("https://"))
+                    .map_or("null".into(), json::string),
             ),
         ])),
         _ => Err(String::from_utf8_lossy(&out.stderr)

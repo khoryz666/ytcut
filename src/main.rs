@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
         env::args().skip(1).partition(|a| a.starts_with("--"));
     let out = folders
         .first()
-        .map_or(env::current_dir()?, PathBuf::from)
+        .map_or_else(env::current_dir, |f| Ok(PathBuf::from(f)))?
         .canonicalize()?;
     let _lock = single_instance_lock()?;
     let port = env::var("PORT").unwrap_or_else(|_| "8765".into());
