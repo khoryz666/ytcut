@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # nixpkgs, Cargo and npm are updated by .github/workflows/update.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
