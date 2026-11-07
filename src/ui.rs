@@ -101,6 +101,16 @@ pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
         desc: "Open download dialog or download YouTube audio",
     },
     PaletteItem {
+        cmd: "/background",
+        args: "",
+        desc: "Play current track and queue in background (persists on exit)",
+    },
+    PaletteItem {
+        cmd: "/stop",
+        args: "",
+        desc: "Stop background playback and pause player",
+    },
+    PaletteItem {
         cmd: "/search",
         args: "[<query>]",
         desc: "Filter library songs by name (empty to clear)",
@@ -473,6 +483,30 @@ impl AppUi {
                     self.parse_and_start_download(rest);
                     self.focus = Focus::Library;
                 }
+            }
+            "background" | "bg" => {
+                self.play_in_background();
+                self.focus = Focus::Library;
+            }
+            "stop" => {
+                let stopped_bg = crate::background::stop().unwrap_or(false);
+                let mut stopped_local = false;
+                if let Some(player) = &mut self.player {
+                    if !player.is_paused() {
+                        player.pause();
+                        stopped_local = true;
+                    }
+                }
+                if stopped_bg && stopped_local {
+                    self.set_status("Stopped background and paused local playback.");
+                } else if stopped_bg {
+                    self.set_status("Stopped background playback.");
+                } else if stopped_local {
+                    self.set_status("Paused local playback.");
+                } else {
+                    self.set_status("No playback is currently active.");
+                }
+                self.focus = Focus::Library;
             }
             "search" | "find" => {
                 if rest.is_empty() {
@@ -903,6 +937,90 @@ impl AppUi {
         };
         if let Err(e) = result {
             self.set_status(format!("Error: {e:#}"));
+        }
+    }
+
+    fn play_in_background(&mut self) {
+        let (files, shuffle, repeat, start_secs) = if let Some(player) = &mut self.player {
+            let cur_idx = player.current_song_index().unwrap_or(0);
+            let pos_secs = player.position().as_secs();
+
+            if player.queue.is_empty() {
+                // If queue is empty, check if a song is selected in the library
+                if let Some(&song_idx) = self.filtered_indices.get(self.lib_selected) {
+                    if let Some(song) = self.songs.get(song_idx) {
+                        (
+                            vec![self.library_dir.join(&song.name)],
+                            player.shuffle,
+                            player.repeat_one,
+                            None,
+                        )
+                    } else {
+                        self.set_status("No music in library to play in background.");
+                        return;
+                    }
+                } else if !self.songs.is_empty() {
+                    let all_paths: Vec<PathBuf> = self
+                        .songs
+                        .iter()
+                        .map(|s| self.library_dir.join(&s.name))
+                        .collect();
+                    (all_paths, player.shuffle, player.repeat_one, None)
+                } else {
+                    self.set_status("No music in library or queue to play in background.");
+                    return;
+                }
+            } else {
+                // Order files starting with current track, then subsequent tracks, then previous tracks
+                let mut reordered = Vec::with_capacity(player.queue.len());
+                if player.repeat_one {
+                    if let Some(cur) = player.queue.get(cur_idx) {
+                        reordered.push(cur.clone());
+                    }
+                } else {
+                    reordered.extend_from_slice(&player.queue[cur_idx..]);
+                    reordered.extend_from_slice(&player.queue[..cur_idx]);
+                }
+                let start = if pos_secs > 1 { Some(pos_secs) } else { None };
+                (reordered, player.shuffle, player.repeat_one, start)
+            }
+        } else {
+            self.set_status("Audio player is not available.");
+            return;
+        };
+
+        if files.is_empty() {
+            self.set_status("No tracks to play in background.");
+            return;
+        }
+
+        let count = files.len();
+        match crate::background::spawn(
+            &self.library_dir,
+            &files,
+            shuffle,
+            repeat,
+            start_secs,
+        ) {
+            Ok(()) => {
+                if let Some(player) = &mut self.player {
+                    player.pause();
+                }
+                let song_title = files
+                    .first()
+                    .and_then(|p| p.file_name())
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "track".into());
+                self.set_status(format!(
+                    "Playing in background: {} ({} track{}). Stop with /stop or `ytcut stop`.",
+                    song_title,
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ));
+            }
+            Err(e) => {
+                self.set_status(format!("Error starting background playback: {e:#}"));
+            }
         }
     }
 
@@ -1688,6 +1806,8 @@ impl AppUi {
         Commands (/)\n\
         \n\
           /add [<args>] download dialog or URL (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
+          /background   play current track and queue in background (persists on exit)\n\
+          /stop         stop background playback and pause local player\n\
           /search [<q>] filter library songs by name (empty to clear filter)\n\
           /refresh      reload music library from disk\n\
           /settings     open settings (folder, browser, auto-update, volume)\n\
@@ -1889,6 +2009,8 @@ mod tests {
         assert_eq!(matching_commands("/set")[0].cmd, "/settings");
         assert_eq!(matching_commands("quit")[0].cmd, "/quit");
         assert_eq!(matching_commands("/add")[0].cmd, "/add");
+        assert_eq!(matching_commands("/back")[0].cmd, "/background");
+        assert_eq!(matching_commands("/stop")[0].cmd, "/stop");
         assert_eq!(matching_commands("/search")[0].cmd, "/search");
         assert_eq!(matching_commands("/refresh")[0].cmd, "/refresh");
     }

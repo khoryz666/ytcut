@@ -1,5 +1,6 @@
 //! ytcut: terminal music player and YouTube audio downloader.
 
+mod background;
 mod config;
 mod downloads;
 mod library;
@@ -197,30 +198,6 @@ fn main() -> Result<()> {
         }) => {
             let lib_dir = music_folder(cli.out, &config)?;
 
-            if background {
-                let exe = std::env::current_exe().context("could not find this executable")?;
-                let mut args = vec!["play".to_string()];
-                args.extend(files.iter().cloned());
-                if shuffle {
-                    args.push("--shuffle".into());
-                }
-                if repeat {
-                    args.push("--repeat".into());
-                }
-                if let Some(s) = &start {
-                    args.push("--start".into());
-                    args.push(s.clone());
-                }
-                spawn_detached(&exe, &args)?;
-                println!("Playing in the background. Stop it with `ytcut stop`.");
-                return Ok(());
-            }
-
-            let is_daemon = std::env::var("YTCUT_DAEMON").is_ok();
-            if is_daemon {
-                std::fs::write(pid_file(&data), std::process::id().to_string())?;
-            }
-
             let mut paths = Vec::new();
 
             if files.is_empty() {
@@ -244,6 +221,21 @@ fn main() -> Result<()> {
                         }
                     }
                 }
+            }
+
+            if background {
+                let start_secs = start
+                    .as_deref()
+                    .and_then(|s| downloads::seconds(s).ok().flatten())
+                    .map(|s| s as u64);
+                background::spawn(&lib_dir, &paths, shuffle, repeat, start_secs)?;
+                println!("Playing in the background. Stop it with `ytcut stop`.");
+                return Ok(());
+            }
+
+            let is_daemon = std::env::var("YTCUT_DAEMON").is_ok();
+            if is_daemon {
+                std::fs::write(background::pid_file(&data), std::process::id().to_string())?;
             }
 
             let mut player = Player::new()?;
@@ -324,16 +316,11 @@ fn main() -> Result<()> {
             }
             println!("\nStopped.");
             if is_daemon {
-                let _ = std::fs::remove_file(pid_file(&data));
+                let _ = std::fs::remove_file(background::pid_file(&data));
             }
         }
         Some(Commands::Stop) => {
-            let pid_path = pid_file(&data);
-            let pid_str = std::fs::read_to_string(&pid_path)
-                .with_context(|| "no background player is running")?;
-            let pid: i32 = pid_str.trim().parse().context("invalid pid file")?;
-            let _ = std::fs::remove_file(&pid_path);
-            if kill_background(pid) {
+            if background::stop()? {
                 println!("Stopped.");
             } else {
                 println!("No background player was running.");
@@ -420,62 +407,4 @@ fn music_folder(folder: Option<PathBuf>, config: &Config) -> Result<PathBuf> {
 fn single_instance_lock(data: &Path) -> io::Result<Option<File>> {
     let lock = File::create(data.join("ytcut.lock"))?;
     Ok(lock.try_lock().is_ok().then_some(lock))
-}
-
-fn pid_file(data: &Path) -> PathBuf {
-    data.join("ytcut.pid")
-}
-
-/// Spawn this binary detached, so playback survives closing the terminal.
-#[cfg(unix)]
-fn spawn_detached(exe: &Path, args: &[String]) -> io::Result<()> {
-    use std::os::unix::process::CommandExt;
-    unsafe {
-        std::process::Command::new(exe)
-            .args(args)
-            .env("YTCUT_DAEMON", "1")
-            .stdin(process::Stdio::null())
-            .stdout(process::Stdio::null())
-            .stderr(process::Stdio::null())
-            .pre_exec(|| {
-                if libc::setsid() == -1 {
-                    Err(io::Error::last_os_error())
-                } else {
-                    Ok(())
-                }
-            })
-            .spawn()?;
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn spawn_detached(exe: &Path, args: &[String]) -> io::Result<()> {
-    use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    std::process::Command::new(exe)
-        .args(args)
-        .env("YTCUT_DAEMON", "1")
-        .stdin(process::Stdio::null())
-        .stdout(process::Stdio::null())
-        .stderr(process::Stdio::null())
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-        .spawn()?;
-    Ok(())
-}
-
-/// Signal the background player to stop. Returns false if no such process exists.
-#[cfg(unix)]
-fn kill_background(pid: i32) -> bool {
-    unsafe { libc::kill(pid, libc::SIGTERM) == 0 }
-}
-
-#[cfg(windows)]
-fn kill_background(pid: i32) -> bool {
-    std::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/F"])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }

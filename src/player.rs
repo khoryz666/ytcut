@@ -193,6 +193,10 @@ impl Player {
         }
     }
 
+    pub fn pause(&self) {
+        self.player.pause();
+    }
+
     pub fn set_volume(&self, volume: f32) {
         self.player.set_volume(volume.clamp(0.0, 1.0));
     }
