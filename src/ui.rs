@@ -101,6 +101,16 @@ pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
         desc: "Open download dialog or download YouTube audio",
     },
     PaletteItem {
+        cmd: "/search",
+        args: "[<query>]",
+        desc: "Filter library songs by name (empty to clear)",
+    },
+    PaletteItem {
+        cmd: "/refresh",
+        args: "",
+        desc: "Reload library songs from disk",
+    },
+    PaletteItem {
         cmd: "/settings",
         args: "",
         desc: "Open settings (folder, browser, autoupdate, volume)",
@@ -406,7 +416,7 @@ impl AppUi {
                     let has_args = clean.contains(char::is_whitespace);
                     let item_clean = item.cmd.strip_prefix('/').unwrap_or(item.cmd);
                     if !has_args
-                        && (item.cmd == "/add" || item.cmd == "/dir")
+                        && (item.cmd == "/dir" || (item.cmd == "/search" && clean.is_empty()))
                         && (clean.is_empty() || clean == item_clean)
                     {
                         self.command_input = format!("{} ", item.cmd);
@@ -426,28 +436,13 @@ impl AppUi {
             KeyCode::Backspace => {
                 self.command_input.pop();
                 self.command_palette_selected = 0;
-                self.apply_command_filter();
             }
             KeyCode::Char(c) => {
                 self.command_input.push(c);
                 self.command_palette_selected = 0;
-                self.apply_command_filter();
             }
             _ => {}
         }
-    }
-
-    /// A non-command input acts as a live search filter.
-    fn apply_command_filter(&mut self) {
-        if is_command(&self.command_input) {
-            return;
-        }
-        let query = self
-            .command_input
-            .strip_prefix('/')
-            .unwrap_or(&self.command_input);
-        self.search_query = query.to_string();
-        self.apply_search_filter();
     }
 
     fn execute_command(&mut self, input: &str) {
@@ -479,6 +474,26 @@ impl AppUi {
                     self.focus = Focus::Library;
                 }
             }
+            "search" | "find" => {
+                if rest.is_empty() {
+                    self.search_query.clear();
+                    self.apply_search_filter();
+                    self.set_status("Search filter cleared.");
+                } else {
+                    self.search_query = rest.to_string();
+                    self.apply_search_filter();
+                    self.set_status(format!(
+                        "Filter: \"{rest}\" ({} found, use /search to clear)",
+                        self.filtered_indices.len()
+                    ));
+                }
+                self.focus = Focus::Library;
+            }
+            "refresh" | "reload" => {
+                self.refresh_songs();
+                self.set_status(format!("Library refreshed ({} songs).", self.songs.len()));
+                self.focus = Focus::Library;
+            }
             "update" => {
                 crate::update::update_now();
                 self.set_status("Updating in the background…");
@@ -491,8 +506,11 @@ impl AppUi {
                 self.should_quit = true;
             }
             _ => {
-                self.search_query = clean.to_string();
-                self.apply_search_filter();
+                if !clean.is_empty() {
+                    self.set_status(format!(
+                        "Unknown command: /{clean}. Type /help for commands."
+                    ));
+                }
                 self.focus = Focus::Library;
             }
         }
@@ -873,18 +891,13 @@ impl AppUi {
         let song_path = self.library_dir.join(&song.name);
 
         let result = if let Some(player) = &mut self.player {
-            // Populate the queue with all songs if it is empty, else play in place.
-            if player.queue.is_empty() {
-                let all_paths: Vec<PathBuf> = self
-                    .songs
-                    .iter()
-                    .map(|s| self.library_dir.join(&s.name))
-                    .collect();
-                player.set_queue(all_paths);
-                player.play_index(song_idx)
+            let target_idx = if let Some(pos) = player.queue.iter().position(|p| p == &song_path) {
+                pos
             } else {
-                player.play_file(&song_path)
-            }
+                player.add_to_queue(song_path);
+                player.queue.len() - 1
+            };
+            player.play_index(target_idx)
         } else {
             Ok(())
         };
@@ -1530,7 +1543,7 @@ impl AppUi {
 
         let items: Vec<ListItem> = if matching.is_empty() {
             vec![ListItem::new(Span::styled(
-                format!("  Search library: \"{clean}\""),
+                format!("  No matching commands for \"/{clean}\" (use /search to filter)"),
                 Style::default().fg(Color::DarkGray),
             ))]
         } else {
@@ -1660,7 +1673,7 @@ impl AppUi {
           a             open download dialog (/add)\n\
           R             rename song\n\
           d             delete song\n\
-          /             command palette & search\n\
+          /             command palette\n\
           ?             this help\n\
           q / Esc       back / quit\n\
         \n\
@@ -1675,6 +1688,8 @@ impl AppUi {
         Commands (/)\n\
         \n\
           /add [<args>] download dialog or URL (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
+          /search [<q>] filter library songs by name (empty to clear filter)\n\
+          /refresh      reload music library from disk\n\
           /settings     open settings (folder, browser, auto-update, volume)\n\
           /dir <path>   switch or create library folder\n\
           /update       update yt-dlp and ytcut to the latest version\n\
@@ -1769,24 +1784,6 @@ pub fn run(library_dir: PathBuf, tools: Option<Tools>, config: Config) -> Result
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
     res
-}
-
-fn is_command(input: &str) -> bool {
-    let cmd = input.split_whitespace().next().unwrap_or("");
-    matches!(
-        cmd,
-        "settings"
-            | "set"
-            | "dir"
-            | "folder"
-            | "add"
-            | "update"
-            | "help"
-            | "quit"
-            | "q"
-            | "exit"
-            | "?"
-    )
 }
 
 fn volume_bar(volume: f32) -> String {
@@ -1892,5 +1889,7 @@ mod tests {
         assert_eq!(matching_commands("/set")[0].cmd, "/settings");
         assert_eq!(matching_commands("quit")[0].cmd, "/quit");
         assert_eq!(matching_commands("/add")[0].cmd, "/add");
+        assert_eq!(matching_commands("/search")[0].cmd, "/search");
+        assert_eq!(matching_commands("/refresh")[0].cmd, "/refresh");
     }
 }
