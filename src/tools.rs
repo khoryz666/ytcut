@@ -1,99 +1,252 @@
-//! yt-dlp and ffmpeg: embedded in release builds, taken from PATH in a dev build.
-//!
-//! The release build carries both programs as gzip streams and unpacks them to the
-//! user's cache folder once per build, so the binary runs without Nix or any
-//! separately installed downloader.
+//! yt-dlp, ffmpeg and deno: downloaded from their own releases on first use and checked
+//! against the checksums published there. After that yt-dlp keeps itself current, which
+//! matters because YouTube keeps breaking old versions, and ytcut updates from its own releases.
 
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io::{BufWriter, Read};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{bail, ensure, Context, Result};
+use self_update::{backends::github, cargo_crate_version, Download, Extract};
+use sha2::{Digest, Sha256};
+use tokio::process::Command;
+
+#[cfg(not(all(target_arch = "x86_64", any(target_os = "linux", windows))))]
+compile_error!("ytcut only knows the tool downloads for x86-64 Linux and Windows");
+
+/// A release file: its URL, the URL of its checksums, and where the program is inside it.
+struct Asset {
+    url: &'static str,
+    sums: &'static str,
+    /// The path of the program in the archive, or none when the file is the program.
+    inside: Option<&'static str>,
+}
+
+#[cfg(not(windows))]
+const ASSETS: [Asset; 3] = [
+    Asset {
+        url: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
+        sums: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS",
+        inside: None,
+    },
+    Asset {
+        url: "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+        sums: "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/checksums.sha256",
+        inside: Some("ffmpeg-master-latest-linux64-gpl/bin/ffmpeg"),
+    },
+    Asset {
+        url: "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
+        sums: "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip.sha256sum",
+        inside: Some("deno"),
+    },
+];
+
+#[cfg(windows)]
+const ASSETS: [Asset; 3] = [
+    Asset {
+        url: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+        sums: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS",
+        inside: None,
+    },
+    Asset {
+        url: "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        sums: "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/checksums.sha256",
+        inside: Some("ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe"),
+    },
+    Asset {
+        url: "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
+        sums: "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip.sha256sum",
+        inside: Some("deno.exe"),
+    },
+];
 
 #[derive(Clone)]
 pub struct Tools {
     pub yt_dlp: PathBuf,
-    /// The ffmpeg binary to hand yt-dlp, or none to let it look on PATH.
-    pub ffmpeg: Option<PathBuf>,
+    pub ffmpeg: PathBuf,
+    pub deno: PathBuf,
 }
 
-/// Find the tools this build uses, unpacking the embedded ones on first run.
-pub fn prepare() -> Result<Tools> {
-    #[cfg(feature = "bundle")]
-    {
-        extract()
-    }
-    #[cfg(not(feature = "bundle"))]
-    {
-        Ok(Tools {
-            yt_dlp: "yt-dlp".into(),
-            ffmpeg: None,
-        })
-    }
+/// The tools in `dir`, downloading any that are missing.
+pub fn prepare(dir: &Path) -> Result<Tools> {
+    fs::create_dir_all(dir).with_context(|| format!("could not create {}", dir.display()))?;
+    let path = |name: &str| dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let tools = Tools {
+        yt_dlp: path("yt-dlp"),
+        ffmpeg: path("ffmpeg"),
+        deno: path("deno"),
+    };
+    let [yt_dlp, ffmpeg, deno] = &ASSETS;
+    install(yt_dlp, &tools.yt_dlp)?;
+    install(ffmpeg, &tools.ffmpeg)?;
+    install(deno, &tools.deno)?;
+    Ok(tools)
 }
 
-#[cfg(feature = "bundle")]
-fn extract() -> Result<Tools> {
-    use std::fs;
-    use std::io::{copy, Write};
-    use std::path::Path;
+/// Download, check and unpack one tool. It only appears at `dest` once complete.
+fn install(asset: &Asset, dest: &Path) -> Result<()> {
+    if dest.is_file() {
+        return Ok(());
+    }
+    println!("downloading {}", asset.url);
+    let temp = dest.with_extension("download");
+    let _ = fs::remove_dir_all(&temp);
+    fs::create_dir_all(&temp)?;
 
-    use anyhow::Context;
-    use flate2::read::GzDecoder;
+    let file_name = asset.url.rsplit('/').next().unwrap_or_default();
+    let archive = temp.join(file_name);
+    let writer = BufWriter::new(File::create(&archive)?);
+    Download::from_url(asset.url)
+        .download_to(writer)
+        .with_context(|| format!("could not download {file_name}"))?;
+    let mut sums = Vec::new();
+    Download::from_url(asset.sums)
+        .download_to(&mut sums)
+        .with_context(|| format!("could not download the checksums of {file_name}"))?;
+    let sums = String::from_utf8_lossy(&sums);
+    let expected = expected_hash(&sums, file_name)
+        .with_context(|| format!("no published checksum for {file_name}"))?;
+    let actual = sha256(&archive)?;
+    if !actual.eq_ignore_ascii_case(expected) {
+        bail!("{file_name} does not match its published checksum");
+    }
 
-    static YT_DLP: &[u8] = include_bytes!(env!("YTCUT_YTDLP"));
-    static FFMPEG: &[u8] = include_bytes!(env!("YTCUT_FFMPEG"));
-
-    /// Unpack one gzip stream to an executable, without leaving a half-written file.
-    fn unpack(data: &[u8], path: &Path) -> Result<()> {
-        let temp = path.with_extension("part");
-        let mut file = fs::File::create(&temp)
-            .with_context(|| format!("could not write {}", temp.display()))?;
-        copy(&mut GzDecoder::new(data), &mut file)
-            .with_context(|| format!("could not unpack {}", path.display()))?;
-        file.flush()?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o755))?;
+    let program = match asset.inside {
+        Some(inside) => {
+            Extract::from_source(&archive)
+                .extract_file(&temp, inside)
+                .with_context(|| format!("could not unpack {file_name}"))?;
+            temp.join(inside)
         }
-        fs::rename(&temp, path)?;
-        Ok(())
-    }
+        None => archive,
+    };
+    ensure!(program.is_file(), "{file_name} did not contain the program");
+    make_executable(&program)?;
+    fs::rename(&program, dest)?;
+    let _ = fs::remove_dir_all(&temp);
+    Ok(())
+}
 
-    let dir = cache_dir()?.join(env!("YTCUT_TOOLS_ID"));
-    let suffix = std::env::consts::EXE_SUFFIX;
-    let yt_dlp = dir.join(format!("yt-dlp{suffix}"));
-    let ffmpeg = dir.join(format!("ffmpeg{suffix}"));
-    let ready = dir.join(".ready");
-    if !ready.is_file() || !yt_dlp.is_file() || !ffmpeg.is_file() {
-        fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
-        unpack(YT_DLP, &yt_dlp)?;
-        unpack(FFMPEG, &ffmpeg)?;
-        fs::write(&ready, b"")?;
+#[cfg(unix)]
+fn make_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+fn sha256(path: &Path) -> Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut chunk = vec![0; 1 << 20];
+    loop {
+        let n = file.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&chunk[..n]);
     }
-    Ok(Tools {
-        yt_dlp,
-        ffmpeg: Some(ffmpeg),
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+/// The hash for `file_name` in a checksum file. Most list `HASH  NAME` lines. Deno's
+/// Windows one is PowerShell output for a single file, whose path was the build machine's.
+fn expected_hash<'a>(sums: &'a str, file_name: &str) -> Option<&'a str> {
+    let is_hash = |word: &&str| word.len() == 64 && word.bytes().all(|b| b.is_ascii_hexdigit());
+    let listed = sums
+        .lines()
+        .find(|line| line.split_whitespace().last() == Some(file_name))
+        .and_then(|line| line.split_whitespace().find(is_hash));
+    listed.or_else(|| {
+        let mut hashes = sums.split_whitespace().filter(is_hash);
+        hashes.next().filter(|_| hashes.next().is_none())
     })
 }
 
-/// `%LOCALAPPDATA%\ytcut` on Windows, `$XDG_CACHE_HOME/ytcut` or `~/.cache/ytcut` elsewhere.
-#[cfg(feature = "bundle")]
-fn cache_dir() -> Result<PathBuf> {
-    use std::env;
-
-    use anyhow::bail;
-
-    if cfg!(windows) {
-        match env::var_os("LOCALAPPDATA").filter(|dir| !dir.is_empty()) {
-            Some(base) => return Ok(PathBuf::from(base).join("ytcut")),
-            None => bail!("LOCALAPPDATA is not set"),
+/// Let yt-dlp replace itself with the latest release. Failing is fine: it tries again next start.
+pub async fn update_yt_dlp(tools: &Tools) {
+    let update = Command::new(&tools.yt_dlp)
+        .arg("-U")
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(Duration::from_secs(120), update).await {
+        Ok(Ok(out)) if !out.status.success() => {
+            eprintln!(
+                "yt-dlp update failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
+        Ok(Err(e)) => eprintln!("yt-dlp update failed: {e}"),
+        Err(_) => eprintln!("yt-dlp update timed out"),
+        Ok(Ok(_)) => {}
     }
-    if let Some(base) = env::var_os("XDG_CACHE_HOME").filter(|dir| !dir.is_empty()) {
-        return Ok(PathBuf::from(base).join("ytcut"));
+}
+
+/// Replace this binary with the latest GitHub release, used from the next start. Failing is
+/// fine: this copy keeps working and it tries again next start.
+pub async fn update_self() {
+    let update = tokio::task::spawn_blocking(|| -> Result<_> {
+        Ok(github::Update::configure()
+            .repo_owner("khoryz666")
+            .repo_name("ytcut")
+            .bin_name("ytcut")
+            .current_version(cargo_crate_version!())
+            .no_confirm(true)
+            .show_output(false)
+            .show_download_progress(false)
+            .build()?
+            .update()?)
+    });
+    match update.await {
+        Ok(Ok(status)) if status.is_updated() => {
+            println!("updated to {}; restart ytcut to use it", status.version());
+        }
+        Ok(Err(e)) => eprintln!("self-update failed: {e:#}"),
+        Err(e) => eprintln!("self-update failed: {e}"),
+        Ok(Ok(_)) => {}
     }
-    match env::var_os("HOME").filter(|dir| !dir.is_empty()) {
-        Some(home) => Ok(PathBuf::from(home).join(".cache").join("ytcut")),
-        None => bail!("neither XDG_CACHE_HOME nor HOME is set"),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HASH: &str = "767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795";
+    const OTHER: &str = "f5389d3698ecde4ef06f4e6b1ce0294fe9ac1396228c8990b8d3416d6d177a7d";
+
+    #[test]
+    fn expected_hash_finds_the_exact_name_in_a_list() {
+        let sums = format!("{OTHER}  yt-dlp_linux.zip\n{HASH}  yt-dlp_linux\n");
+        assert_eq!(expected_hash(&sums, "yt-dlp_linux"), Some(HASH));
+        assert_eq!(expected_hash(&sums, "missing"), None);
+    }
+
+    #[test]
+    fn expected_hash_reads_powershell_output_for_one_file() {
+        let sums = format!(
+            "\r\nAlgorithm : SHA256\r\nHash      : {HASH}\r\nPath      : C:\\a\\deno.zip\r\n"
+        );
+        assert_eq!(expected_hash(&sums, "deno.zip"), Some(HASH));
+    }
+
+    #[test]
+    fn sha256_hashes_a_file() {
+        let path = std::env::temp_dir().join(format!("ytcut-test-{}", std::process::id()));
+        fs::write(&path, "hello").unwrap();
+        let hash = sha256(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
     }
 }

@@ -3,22 +3,30 @@ name = "ytcut"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-# Release builds embed yt-dlp and ffmpeg; see src/tools.rs and flake.nix.
-bundle = ["dep:flate2"]
-
 [dependencies]
 anyhow = "1.0.104"
 axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive", "env"] }
-flate2 = { version = "1", optional = true }
+dirs = "7"
 mime_guess = "2.0.5"
-rust-embed = { version = "8.13.0", features = ["interpolate-folder-path"] }
+open = "5"
+rust-embed = "8.13.0"
+self_update = { version = "1.3.3", default-features = false, features = [
+    "archive-tar",
+    "archive-zip",
+    "checksums",
+    "compression-tar-gz",
+    "compression-tar-xz",
+    "compression-zip-deflate",
+    "github",
+    "reqwest",
+    "rustls",
+] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+sha2 = "0.11"
 tokio = { version = "1.54.1", features = ["full"] }
 tower = "0.5.3"
-tower-http = { version = "0.7.1", features = ["fs", "trace"] }
+tower-http = { version = "0.7.1", features = ["fs"] }
 
-[build-dependencies]
-flate2 = "1"
+[profile.release]
+strip = true
