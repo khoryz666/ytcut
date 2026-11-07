@@ -15,6 +15,8 @@ The first run needs internet. It downloads yt-dlp, ffmpeg and Deno, about 200 MB
 
 These tools are glibc binaries. Alpine (musl) can't run them. On NixOS, set `programs.nix-ld.enable = true;` in your configuration so the dynamic linker is available.
 
+On the first run ytcut adds a shortcut to start it: the app menu on Linux, the desktop and Start menu on Windows. It points at the binary you ran, so it keeps working as ytcut updates itself.
+
 ## Updates
 
 There is nothing to do. On each start, yt-dlp and ytcut update themselves in the background. A new ytcut takes effect the next time you open it.
@@ -50,6 +52,15 @@ This needs a Chromium-based browser: Chrome, Chromium, Brave, Edge or Vivaldi. W
 - Only one copy runs at a time. Opening it again opens another window.
 - To use another folder, run `ytcut FOLDER`.
 - To pick a browser, set `YTCUT_BROWSER`. To use another port, set `PORT`.
+
+## Uninstall
+
+ytcut writes only three things: the app itself, its tools, and a shortcut. To remove it all:
+
+- **Linux:** delete `~/.local/share/applications/ytcut.desktop`, `~/.local/share/ytcut/`, and the `ytcut` binary.
+- **Windows:** delete `ytcut.lnk` from your Desktop and Start menu, delete `%LOCALAPPDATA%\ytcut\`, and delete `ytcut.exe`.
+
+Nothing else is left behind.
 
 ## Develop
 
