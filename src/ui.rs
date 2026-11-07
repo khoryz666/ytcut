@@ -97,8 +97,8 @@ pub struct PaletteItem {
 pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
     PaletteItem {
         cmd: "/add",
-        args: "<url> [--name <name>] [--start <s>] [--end <e>]",
-        desc: "Download audio from YouTube",
+        args: "[<url>]",
+        desc: "Open download dialog or download YouTube audio",
     },
     PaletteItem {
         cmd: "/settings",
@@ -472,11 +472,12 @@ impl AppUi {
             }
             "add" => {
                 if rest.is_empty() {
-                    self.set_status("Usage: /add <url> [--name <name>] [--start <s>] [--end <e>]");
+                    self.add_field = AddField::Url;
+                    self.focus = Focus::Add;
                 } else {
                     self.parse_and_start_download(rest);
+                    self.focus = Focus::Library;
                 }
-                self.focus = Focus::Library;
             }
             "update" => {
                 crate::update::update_now();
@@ -614,6 +615,10 @@ impl AppUi {
 
     fn trigger_download(&mut self) {
         let url = self.add_url.clone();
+        if url.trim().is_empty() {
+            self.set_status("Enter a URL first.");
+            return;
+        }
         self.start_download(url);
         self.focus = Focus::Library;
     }
@@ -1024,23 +1029,45 @@ impl AppUi {
     fn render(&self, f: &mut ratatui::Frame) {
         let size = f.area();
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(4), // Add pane & downloads
-                Constraint::Min(8),    // Library & Playlist
-                Constraint::Length(3), // Player bar
-                Constraint::Length(1), // Status / update / help bar
-            ])
-            .split(size);
+        let has_running_job = {
+            let jobs = self.jobs.lock().unwrap();
+            jobs.iter().any(|j| j.status == Status::Running)
+        };
 
-        self.render_add_pane(f, chunks[0]);
+        let chunks = if has_running_job {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Download progress banner
+                    Constraint::Min(8),    // Library & Playlist
+                    Constraint::Length(3), // Player bar
+                    Constraint::Length(1), // Status / update / help bar
+                ])
+                .split(size)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(0),
+                    Constraint::Min(8),    // Library & Playlist
+                    Constraint::Length(3), // Player bar
+                    Constraint::Length(1), // Status / update / help bar
+                ])
+                .split(size)
+        };
+
+        if has_running_job {
+            self.render_download_banner(f, chunks[0]);
+        }
         self.render_middle_columns(f, chunks[1]);
         self.render_player_bar(f, chunks[2]);
         self.render_bottom_status(f, chunks[3]);
 
         if let Some(prompt) = &self.prompt {
             self.render_prompt(f, prompt, size);
+        }
+        if self.focus == Focus::Add {
+            self.render_add_dialog(f, size);
         }
         if self.focus == Focus::Command {
             self.render_command_palette(f, size);
@@ -1053,175 +1080,156 @@ impl AppUi {
         }
     }
 
-    fn render_add_pane(&self, f: &mut ratatui::Frame, area: Rect) {
-        let is_focused = self.focus == Focus::Add;
-        let border_style = if is_focused {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+    fn render_download_banner(&self, f: &mut ratatui::Frame, area: Rect) {
+        let jobs = self.jobs.lock().unwrap();
+        if let Some(job) = jobs.iter().rev().find(|j| j.status == Status::Running) {
+            let label = truncate_str(&job.label, 30);
+            let gauge = Gauge::default()
+                .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
+                .ratio((job.progress / 100.0).clamp(0.0, 1.0))
+                .label(format!("Downloading {label}: {:.0}%", job.progress));
+            f.render_widget(gauge, area);
+        }
+    }
 
-        let title = if is_focused {
-            " Add [Tab / Shift+Tab field · Esc cancel] "
-        } else {
-            " Add [a] "
-        };
+    fn render_add_dialog(&self, f: &mut ratatui::Frame, area: Rect) {
+        let popup = centered_rect(68, 52, area);
+        f.render_widget(Clear, popup);
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(title)
-            .border_style(border_style);
+            .title(" Download from YouTube [Tab / Shift+Tab field · Esc cancel] ")
+            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        f.render_widget(block, popup);
 
-        f.render_widget(block, area);
-
-        let inner = area.inner(ratatui::layout::Margin {
+        let inner = popup.inner(ratatui::layout::Margin {
             vertical: 1,
-            horizontal: 1,
+            horizontal: 2,
         });
 
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(50), // Inputs
-                Constraint::Percentage(50), // Latest job status / progress
+                Constraint::Length(2), // URL
+                Constraint::Length(2), // Name
+                Constraint::Length(2), // Cut Start & End
+                Constraint::Min(1),    // Spacer
+                Constraint::Length(1), // Footer hint
             ])
             .split(inner);
 
-        // Inputs line: URL [name] [start-end]
-        let spans = vec![
-            Span::styled("URL: ", Style::default().fg(Color::Cyan)),
+        // URL Field
+        let url_focused = self.add_field == AddField::Url;
+        let url_style = if url_focused {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        let url_val = if self.add_url.is_empty() && url_focused {
+            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
+        } else if self.add_url.is_empty() {
+            Span::styled("<paste or type YouTube URL>", Style::default().fg(Color::DarkGray))
+        } else {
             Span::styled(
-                if self.add_url.is_empty()
-                    && self.focus == Focus::Add
-                    && self.add_field == AddField::Url
-                {
-                    " "
-                } else if self.add_url.is_empty() {
-                    "<enter url>"
-                } else {
-                    &self.add_url
-                },
-                if is_focused && self.add_field == AddField::Url {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED)
-                } else if self.add_url.is_empty() {
-                    Style::default().fg(Color::DarkGray)
+                &self.add_url,
+                if url_focused {
+                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
                 } else {
                     Style::default().fg(Color::White)
                 },
-            ),
-            Span::raw("  Name: "),
-            Span::styled(
-                if self.add_name.is_empty()
-                    && self.focus == Focus::Add
-                    && self.add_field == AddField::Name
-                {
-                    " "
-                } else if self.add_name.is_empty() {
-                    "<optional>"
-                } else {
-                    &self.add_name
-                },
-                if is_focused && self.add_field == AddField::Name {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED)
-                } else if self.add_name.is_empty() {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            ),
-            Span::raw("  Cut: "),
-            Span::styled(
-                if self.add_start.is_empty()
-                    && self.focus == Focus::Add
-                    && self.add_field == AddField::Start
-                {
-                    " "
-                } else if self.add_start.is_empty() {
-                    "0"
-                } else {
-                    &self.add_start
-                },
-                if is_focused && self.add_field == AddField::Start {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED)
-                } else if self.add_start.is_empty() {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            ),
-            Span::raw("-"),
-            Span::styled(
-                if self.add_end.is_empty()
-                    && self.focus == Focus::Add
-                    && self.add_field == AddField::End
-                {
-                    " "
-                } else if self.add_end.is_empty() {
-                    "end"
-                } else {
-                    &self.add_end
-                },
-                if is_focused && self.add_field == AddField::End {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED)
-                } else if self.add_end.is_empty() {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            ),
-        ];
+            )
+        };
+        let url_line = Line::from(vec![
+            Span::styled(if url_focused { "▶ URL:  " } else { "  URL:  " }, url_style),
+            url_val,
+        ]);
+        f.render_widget(Paragraph::new(url_line), rows[0]);
 
-        f.render_widget(Paragraph::new(Line::from(spans)), cols[0]);
+        // Name Field
+        let name_focused = self.add_field == AddField::Name;
+        let name_style = if name_focused {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        let name_val = if self.add_name.is_empty() && name_focused {
+            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
+        } else if self.add_name.is_empty() {
+            Span::styled("<optional: default is video title>", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                &self.add_name,
+                if name_focused {
+                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            )
+        };
+        let name_line = Line::from(vec![
+            Span::styled(if name_focused { "▶ Name: " } else { "  Name: " }, name_style),
+            name_val,
+        ]);
+        f.render_widget(Paragraph::new(name_line), rows[1]);
 
-        // Job status / progress
-        let jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.last() {
-            let label_span = Span::styled(
-                truncate_str(&job.label, 20),
-                Style::default().fg(Color::Cyan),
-            );
-            match job.status {
-                Status::Running => {
-                    let gauge = Gauge::default()
-                        .block(Block::default())
-                        .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
-                        .ratio((job.progress / 100.0).clamp(0.0, 1.0))
-                        .label(format!("{}: {:.0}%", label_span.content, job.progress));
-                    f.render_widget(gauge, cols[1]);
-                }
-                Status::Done => {
-                    let text = format!("✓ Saved: {}", job.message);
-                    f.render_widget(
-                        Paragraph::new(text).style(Style::default().fg(Color::Green)),
-                        cols[1],
-                    );
-                }
-                Status::Exists => {
-                    let text = format!("✓ Already exists: {}", job.message);
-                    f.render_widget(
-                        Paragraph::new(text).style(Style::default().fg(Color::Blue)),
-                        cols[1],
-                    );
-                }
-                Status::Error => {
-                    let text = format!("✕ Error: {}", job.message);
-                    f.render_widget(
-                        Paragraph::new(text).style(Style::default().fg(Color::Red)),
-                        cols[1],
-                    );
-                }
-            }
-        }
+        // Cut Range (Start and End)
+        let start_focused = self.add_field == AddField::Start;
+        let end_focused = self.add_field == AddField::End;
+        let cut_active = start_focused || end_focused;
+        let cut_style = if cut_active {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+
+        let start_val = if self.add_start.is_empty() && start_focused {
+            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
+        } else if self.add_start.is_empty() {
+            Span::styled("0", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                &self.add_start,
+                if start_focused {
+                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            )
+        };
+
+        let end_val = if self.add_end.is_empty() && end_focused {
+            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
+        } else if self.add_end.is_empty() {
+            Span::styled("end", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                &self.add_end,
+                if end_focused {
+                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            )
+        };
+
+        let cut_line = Line::from(vec![
+            Span::styled(if cut_active { "▶ Cut:  " } else { "  Cut:  " }, cut_style),
+            Span::raw("Start: "),
+            start_val,
+            Span::raw("    End: "),
+            end_val,
+            Span::styled("  (e.g. 1:30 or 90)", Style::default().fg(Color::DarkGray)),
+        ]);
+        f.render_widget(Paragraph::new(cut_line), rows[2]);
+
+        // Footer hint
+        let footer = Line::from(vec![
+            Span::styled(
+                "Tab / Shift+Tab switch fields · Esc cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]);
+        f.render_widget(Paragraph::new(footer), rows[4]);
     }
 
     fn render_middle_columns(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -1649,7 +1657,7 @@ impl AppUi {
           Shift+Tab     previous pane / field\n\
           j / k         move up / down\n\
           +             add to queue\n\
-          a             add song (URL)\n\
+          a             open download dialog (/add)\n\
           R             rename song\n\
           d             delete song\n\
           /             command palette & search\n\
@@ -1666,7 +1674,7 @@ impl AppUi {
         \n\
         Commands (/)\n\
         \n\
-          /add <args>   download audio (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
+          /add [<args>] download dialog or URL (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
           /settings     open settings (folder, browser, auto-update, volume)\n\
           /dir <path>   switch or create library folder\n\
           /update       update yt-dlp and ytcut to the latest version\n\
