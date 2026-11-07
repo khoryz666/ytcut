@@ -93,13 +93,6 @@ pub enum Commands {
         /// Song name to delete
         name: String,
     },
-    /// Rename a song
-    Mv {
-        /// Current song name
-        name: String,
-        /// New song name
-        new: String,
-    },
     /// Update yt-dlp + self (VERSION optional: pin/downgrade)
     Update {
         /// Target version
@@ -336,7 +329,7 @@ fn main() -> Result<()> {
                 println!("No songs found in {}", lib_dir.display());
             } else {
                 for s in songs {
-                    println!("▶ {:<45} {:>10}", s.name, s.formatted_size());
+                    println!("▶ {}", s.name);
                 }
             }
         }
@@ -361,12 +354,6 @@ fn main() -> Result<()> {
             let lib_dir = music_folder(cli.out, &config)?;
             library::delete(&lib_dir, &name).map_err(|e| anyhow::anyhow!(e))?;
             println!("Deleted {name}");
-        }
-        Some(Commands::Mv { name, new }) => {
-            let lib_dir = music_folder(cli.out, &config)?;
-            let new_name =
-                library::rename(&lib_dir, &name, &new).map_err(|e| anyhow::anyhow!(e))?;
-            println!("Renamed {name} to {new_name}");
         }
         Some(Commands::Update { version }) => {
             println!("Updating ytcut...");

@@ -25,11 +25,13 @@ pub struct Song {
 }
 
 impl Song {
+    #[allow(dead_code)]
     pub fn formatted_size(&self) -> String {
         format_size(self.size)
     }
 }
 
+#[allow(dead_code)]
 pub fn format_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -93,6 +95,7 @@ pub fn list(out: &Path) -> io::Result<Vec<Song>> {
 }
 
 /// Rename a song, keeping its extension. Returns the new file name.
+#[allow(dead_code)]
 pub fn rename(out: &Path, name: &str, to: &str) -> Result<String, String> {
     let from = find(out, name)?;
     let to = clean_name(to);

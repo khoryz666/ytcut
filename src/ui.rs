@@ -168,7 +168,6 @@ pub fn matching_commands(input: &str) -> Vec<&'static PaletteItem> {
 #[derive(Clone, Debug)]
 pub enum PromptType {
     Delete(String),
-    Rename { old_name: String, input: String },
 }
 
 pub struct AppUi {
@@ -357,39 +356,6 @@ impl AppUi {
                 }
                 _ => {}
             },
-            Some(PromptType::Rename { old_name, input }) => match code {
-                KeyCode::Esc => {
-                    self.prompt = None;
-                    self.focus = Focus::Library;
-                }
-                KeyCode::Enter => {
-                    let new_input = input.trim();
-                    if !new_input.is_empty() {
-                        match library::rename(&self.library_dir, old_name, new_input) {
-                            Ok(new_file) => {
-                                self.set_status(format!("Renamed to {new_file}"));
-                                self.refresh_songs();
-                            }
-                            Err(e) => {
-                                self.set_status(format!("Error: {e}"));
-                            }
-                        }
-                    }
-                    self.prompt = None;
-                    self.focus = Focus::Library;
-                }
-                KeyCode::Backspace => {
-                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
-                        input.pop();
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
-                        input.push(c);
-                    }
-                }
-                _ => {}
-            },
             None => {
                 self.focus = Focus::Library;
             }
@@ -410,7 +376,7 @@ impl AppUi {
                         (self.command_palette_selected + 1) % matching.len();
                 }
             }
-            KeyCode::Up | KeyCode::BackTab => {
+            KeyCode::Up => {
                 if !matching.is_empty() {
                     if self.command_palette_selected == 0 {
                         self.command_palette_selected = matching.len() - 1;
@@ -563,7 +529,7 @@ impl AppUi {
                     AddField::End => AddField::Url,
                 };
             }
-            KeyCode::BackTab | KeyCode::Up => {
+            KeyCode::Up => {
                 self.add_field = match self.add_field {
                     AddField::Url => AddField::End,
                     AddField::Name => AddField::Url,
@@ -718,7 +684,7 @@ impl AppUi {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
-            KeyCode::Tab | KeyCode::BackTab => {
+            KeyCode::Tab => {
                 self.focus = Focus::Playlist;
             }
             KeyCode::Char('a') => {
@@ -744,28 +710,10 @@ impl AppUi {
             KeyCode::Enter => {
                 self.play_selected_library_song();
             }
-            KeyCode::Char('+') => {
-                self.add_selected_to_playlist();
-            }
             KeyCode::Char('d') => {
                 if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
                     if let Some(song) = self.songs.get(idx) {
                         self.prompt = Some(PromptType::Delete(song.name.clone()));
-                        self.focus = Focus::Prompt;
-                    }
-                }
-            }
-            KeyCode::Char('R') => {
-                if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
-                    if let Some(song) = self.songs.get(idx) {
-                        let stem = std::path::Path::new(&song.name)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| song.name.clone());
-                        self.prompt = Some(PromptType::Rename {
-                            old_name: song.name.clone(),
-                            input: stem,
-                        });
                         self.focus = Focus::Prompt;
                     }
                 }
@@ -825,7 +773,7 @@ impl AppUi {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
-            KeyCode::Tab | KeyCode::BackTab => {
+            KeyCode::Tab => {
                 self.focus = Focus::Library;
             }
             KeyCode::Char('a') => {
@@ -1024,20 +972,6 @@ impl AppUi {
         }
     }
 
-    fn add_selected_to_playlist(&mut self) {
-        if self.filtered_indices.is_empty() {
-            return;
-        }
-        let song_idx = self.filtered_indices[self.lib_selected];
-        if let Some(song) = self.songs.get(song_idx) {
-            let path = self.library_dir.join(&song.name);
-            if let Some(player) = &mut self.player {
-                player.add_to_queue(path);
-                self.set_status(format!("Added {} to queue", song.name));
-            }
-        }
-    }
-
     fn set_library_dir(&mut self, dir: PathBuf) {
         match std::fs::create_dir_all(&dir) {
             Ok(()) => {
@@ -1105,7 +1039,7 @@ impl AppUi {
                 self.settings.editing_dir = false;
                 self.settings.selected = self.settings.selected.next();
             }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
+            KeyCode::Char('k') | KeyCode::Up => {
                 self.settings.editing_dir = false;
                 self.settings.selected = self.settings.selected.prev();
             }
@@ -1229,7 +1163,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Download from YouTube [Tab / Shift+Tab field · Esc cancel] ")
+            .title(" Download from YouTube ")
             .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
         f.render_widget(block, popup);
 
@@ -1356,7 +1290,7 @@ impl AppUi {
         // Footer hint
         let footer = Line::from(vec![
             Span::styled(
-                "Tab / Shift+Tab switch fields · Esc cancel",
+                "Tab switch fields",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);
@@ -1402,7 +1336,6 @@ impl AppUi {
                 let is_selected = display_idx == self.lib_selected && lib_focused;
 
                 let marker = if is_selected { "▶ " } else { "  " };
-                let size_str = song.formatted_size();
 
                 let style = if is_selected {
                     Style::default()
@@ -1413,12 +1346,7 @@ impl AppUi {
                     Style::default().fg(Color::White)
                 };
 
-                // Split name and size nicely
-                let content = format!(
-                    "{marker}{:<40} {:>8}",
-                    truncate_str(&song.name, 40),
-                    size_str
-                );
+                let content = format!("{marker}{}", song.name);
                 ListItem::new(content).style(style)
             })
             .collect();
@@ -1597,7 +1525,7 @@ impl AppUi {
 
         if spans.is_empty() {
             spans.push(Span::styled(
-                " Tab / Shift+Tab pane · space pause · a add · R rename · / commands · ? help · q quit ",
+                " Tab pane · space pause · a add · / commands · ? help ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -1621,7 +1549,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Command Palette [Tab / Shift+Tab select · Esc close] ")
+            .title(" Command Palette ")
             .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
         f.render_widget(block, popup);
 
@@ -1754,7 +1682,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Settings [Tab / Shift+Tab field · Esc back] ")
+            .title(" Settings ")
             .border_style(Style::default().fg(Color::Yellow));
         f.render_widget(block, popup);
 
@@ -1768,7 +1696,7 @@ impl AppUi {
             .split(inner);
         f.render_widget(List::new(rows), chunks[0]);
         f.render_widget(
-            Paragraph::new(" Tab / Shift+Tab field · Esc back ")
+            Paragraph::new(" Tab field ")
                 .style(Style::default().fg(Color::DarkGray)),
             chunks[1],
         );
@@ -1779,21 +1707,16 @@ impl AppUi {
         f.render_widget(Clear, popup);
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Help — Esc to close ")
+            .title(" Help ")
             .border_style(Style::default().fg(Color::Cyan));
         let text = "\n\
         Navigation\n\
         \n\
-          Tab           next pane / field\n\
-          Shift+Tab     previous pane / field\n\
-          j / k         move up / down\n\
-          +             add to queue\n\
-          a             open download dialog (/add)\n\
-          R             rename song\n\
+          Tab           switch pane / field\n\
           d             delete song\n\
+          a             open download dialog (/add)\n\
           /             command palette\n\
           ?             this help\n\
-          q / Esc       back / quit\n\
         \n\
         Playback\n\
         \n\
@@ -1807,7 +1730,7 @@ impl AppUi {
         \n\
           /add [<args>] download dialog or URL (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
           /background   play current track and queue in background (persists on exit)\n\
-          /stop         stop background playback and pause local player\n\
+          /stop         stop background playback and pause player\n\
           /search [<q>] filter library songs by name (empty to clear filter)\n\
           /refresh      reload music library from disk\n\
           /settings     open settings (folder, browser, auto-update, volume)\n\
@@ -1830,17 +1753,8 @@ impl AppUi {
                     .title(" Confirm Delete ")
                     .border_style(Style::default().fg(Color::Red));
                 let text = format!(
-                    "\n  Delete '{name}'?\n\n  [y] confirm, [n] or [Esc] cancel"
+                    "\n  Delete '{name}'?\n\n  [y] confirm, [n] cancel"
                 );
-                let p = Paragraph::new(text).block(block);
-                f.render_widget(p, popup_area);
-            }
-            PromptType::Rename { old_name, input } => {
-                let block = Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(" Rename '{old_name}' "))
-                    .border_style(Style::default().fg(Color::Yellow));
-                let text = format!("\n  New name: {input}_\n\n  [Esc] cancel");
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
             }
