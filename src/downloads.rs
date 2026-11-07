@@ -239,11 +239,15 @@ fn base_yt_dlp(tools: &Tools, out: &Path, browser: Option<&str>) -> Command {
     let mut cmd = Command::new(&tools.yt_dlp);
     cmd.current_dir(out)
         .stdin(Stdio::null())
-        .args(["--ignore-config", "--no-playlist", "--encoding", "utf-8"])
-        .arg("--ffmpeg-location")
-        .arg(&tools.ffmpeg)
-        .arg("--js-runtimes")
-        .arg(format!("deno:{}", tools.deno.display()));
+        .args(["--ignore-config", "--no-playlist", "--encoding", "utf-8"]);
+
+    if tools.ffmpeg.is_file() {
+        cmd.arg("--ffmpeg-location").arg(&tools.ffmpeg);
+    }
+    if tools.deno.is_file() {
+        cmd.arg("--js-runtimes")
+            .arg(format!("deno:{}", tools.deno.display()));
+    }
 
     if let Some(browser) = browser {
         cmd.args(["--cookies-from-browser", browser]);
@@ -262,7 +266,14 @@ fn download_command(
 ) -> Command {
     let cut = !start.is_empty() || !end.is_empty();
     let template = if !name.is_empty() {
-        name.replace('%', "%%")
+        let base = name.replace('%', "%%");
+        if cut {
+            let part =
+                format!("{}-{}", or_default(start, "0"), or_default(end, "end")).replace(':', ".");
+            format!("{base} ({part})")
+        } else {
+            base
+        }
     } else if cut {
         let part =
             format!("{}-{}", or_default(start, "0"), or_default(end, "end")).replace(':', ".");
@@ -293,7 +304,7 @@ fn download_command(
 
     if cut {
         let range = format!("*{}-{}", or_default(start, "0"), or_default(end, "inf"));
-        cmd.args(["--download-sections", &range, "--force-keyframes-at-cuts"]);
+        cmd.args(["--download-sections", &range]);
     }
     cmd
 }

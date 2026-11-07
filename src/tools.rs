@@ -66,20 +66,49 @@ pub struct Tools {
     pub deno: PathBuf,
 }
 
-/// The tools in `dir`, downloading any that are missing.
+/// The tools in `dir`, downloading any that are missing or falling back to PATH.
 pub fn prepare(dir: &Path) -> Result<Tools> {
-    fs::create_dir_all(dir).with_context(|| format!("could not create {}", dir.display()))?;
+    let _ = fs::create_dir_all(dir);
     let path = |name: &str| dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    let tools = Tools {
+    let mut tools = Tools {
         yt_dlp: path("yt-dlp"),
         ffmpeg: path("ffmpeg"),
         deno: path("deno"),
     };
     let [yt_dlp, ffmpeg, deno] = &ASSETS;
-    install(yt_dlp, &tools.yt_dlp)?;
-    install(ffmpeg, &tools.ffmpeg)?;
-    install(deno, &tools.deno)?;
-    Ok(tools)
+    let _ = install(yt_dlp, &tools.yt_dlp);
+    let _ = install(ffmpeg, &tools.ffmpeg);
+    let _ = install(deno, &tools.deno);
+
+    // Fall back to system PATH if missing in dir
+    if !tools.yt_dlp.is_file() {
+        if let Some(p) = find_in_path("yt-dlp") {
+            tools.yt_dlp = p;
+        }
+    }
+    if !tools.ffmpeg.is_file() {
+        if let Some(p) = find_in_path("ffmpeg") {
+            tools.ffmpeg = p;
+        }
+    }
+    if !tools.deno.is_file() {
+        if let Some(p) = find_in_path("deno") {
+            tools.deno = p;
+        }
+    }
+
+    if tools.yt_dlp.is_file() {
+        Ok(tools)
+    } else {
+        bail!("yt-dlp is not available (failed downloading and not found in PATH)");
+    }
+}
+
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name).with_extension(std::env::consts::EXE_EXTENSION))
+        .find(|file| file.is_file())
 }
 
 /// Download, check and unpack one tool. It only appears at `dest` once complete.
