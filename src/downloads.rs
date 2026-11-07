@@ -13,6 +13,9 @@ use tokio::process::{Child, Command};
 use crate::app::App;
 use crate::library::{clean_name, MAX_NAME_BYTES};
 
+/// Where yt-dlp keeps unfinished files, inside the video folder. Emptied at startup.
+pub const TEMP_DIR: &str = ".ytcut-tmp";
+
 #[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -63,6 +66,7 @@ pub struct StartForm {
 pub async fn info(app: &App, url: &str) -> Result<VideoInfo, String> {
     check_url(url)?;
     let out = yt_dlp(app)
+        .await?
         .args([
             "--skip-download",
             "--print",
@@ -127,6 +131,7 @@ pub async fn start(app: &App, form: StartForm) -> Result<(), String> {
         })
         .unwrap_or_default();
     let child = download_command(app, &name, &form.start, &form.end)
+        .await?
         .arg(&form.url)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -137,12 +142,18 @@ pub async fn start(app: &App, form: StartForm) -> Result<(), String> {
 }
 
 /// yt-dlp for a single video, signed in with the browser profile's cookies once it exists.
-fn yt_dlp(app: &App) -> Command {
-    let mut cmd = Command::new(&app.tools.yt_dlp);
-    cmd.arg("--no-playlist");
-    if let Some(ffmpeg) = &app.tools.ffmpeg {
-        cmd.arg("--ffmpeg-location").arg(ffmpeg);
-    }
+/// It runs inside the video folder so the folder's path never meets its output template,
+/// which would expand any `%` or `$` in it.
+async fn yt_dlp(app: &App) -> Result<Command, String> {
+    let tools = app.tools().await?;
+    let mut cmd = Command::new(&tools.yt_dlp);
+    cmd.current_dir(&app.out)
+        .stdin(Stdio::null())
+        .args(["--ignore-config", "--no-playlist", "--encoding", "utf-8"])
+        .arg("--ffmpeg-location")
+        .arg(&tools.ffmpeg)
+        .arg("--js-runtimes")
+        .arg(format!("deno:{}", tools.deno.display()));
     let profile_exists = |spec: &&str| {
         spec.split_once(':')
             .is_some_and(|(_, dir)| Path::new(dir).is_dir())
@@ -150,25 +161,37 @@ fn yt_dlp(app: &App) -> Command {
     if let Some(spec) = app.cookies.as_deref().filter(profile_exists) {
         cmd.args(["--cookies-from-browser", spec]);
     }
-    cmd
+    Ok(cmd)
 }
 
 /// Download to `<folder>/<name>.mp4`, or the video title when `name` is empty.
-fn download_command(app: &App, name: &str, start: &str, end: &str) -> Command {
+async fn download_command(
+    app: &App,
+    name: &str,
+    start: &str,
+    end: &str,
+) -> Result<Command, String> {
+    let cut = !start.is_empty() || !end.is_empty();
     // `%` would be read as a yt-dlp output template field.
-    let template = if name.is_empty() {
+    let template = if !name.is_empty() {
+        name.replace('%', "%%")
+    } else if cut {
+        // Each part gets its own file, or yt-dlp would keep the first one and skip the rest.
+        let part = format!("{}-{}", or(start, "0"), or(end, "end")).replace(':', ".");
+        format!("%(title).{MAX_NAME_BYTES}B ({part})")
+    } else {
         // Cut long titles to fit the 255-byte file name limit.
         format!("%(title).{MAX_NAME_BYTES}B")
-    } else {
-        name.replace('%', "%%")
     };
-    let mut cmd = yt_dlp(app);
+    let mut cmd = yt_dlp(app).await?;
     cmd.args(["--newline", "--progress"])
         .args([
             "--progress-template",
             "download:PROGRESS %(progress._percent_str)s",
         ])
-        .args(["--print", "after_move:filepath"])
+        .args(["--print", "after_move:SAVED %(filepath)s"])
+        // Half-finished files stay out of the library.
+        .args(["-P", &format!("temp:{TEMP_DIR}")])
         // Prefer H.264 + AAC so the MP4 plays everywhere.
         .args([
             "-f",
@@ -179,12 +202,12 @@ fn download_command(app: &App, name: &str, start: &str, end: &str) -> Command {
             "mp4",
         ])
         .arg("-o")
-        .arg(app.out.join(format!("{template}.%(ext)s")));
-    if !start.is_empty() || !end.is_empty() {
+        .arg(format!("{template}.%(ext)s"));
+    if cut {
         let range = format!("*{}-{}", or(start, "0"), or(end, "inf"));
         cmd.args(["--download-sections", &range, "--force-keyframes-at-cuts"]);
     }
-    cmd
+    Ok(cmd)
 }
 
 /// Add a job for the running download and update it until yt-dlp exits.
@@ -241,8 +264,8 @@ async fn watch(stream: impl AsyncRead + Unpin, jobs: Arc<Mutex<Vec<Job>>>, id: u
         };
         if let Some(p) = line.strip_prefix("PROGRESS ") {
             job.progress = finite(p.trim().trim_end_matches('%')).unwrap_or(job.progress);
-        } else if line.starts_with('/') {
-            job.message = Path::new(line)
+        } else if let Some(path) = line.strip_prefix("SAVED ") {
+            job.message = Path::new(path)
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()

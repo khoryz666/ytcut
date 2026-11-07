@@ -26,6 +26,7 @@
 *.part
 *.ytdl
 *.temp.*
+.ytcut-tmp/
 
 # nix / direnv
 result
@@ -40,5 +41,3 @@ src/web/.vite/
 # rust
 target/
 
-# tools downloaded by scripts/fetch-tools.ps1
-tools/

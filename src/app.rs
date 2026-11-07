@@ -1,18 +1,22 @@
 //! State shared by every request.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::http::{header, HeaderMap};
+use tokio::sync::OnceCell;
 
 use crate::downloads::Job;
-use crate::tools::Tools;
+use crate::tools::{self, Tools};
 
 /// How long an idle server waits for a page at startup.
 pub const STARTUP_GRACE: Duration = Duration::from_secs(60);
-/// How long an idle server waits after the last page closed.
-pub const IDLE_GRACE: Duration = Duration::from_secs(5);
+/// How long a page may stay silent. Browsers slow the timers of hidden pages to one a minute.
+pub const IDLE_GRACE: Duration = Duration::from_secs(90);
+/// How long an idle server waits after a page said it is closing, in case it is reloading.
+pub const CLOSING_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct App {
@@ -22,30 +26,56 @@ pub struct App {
     pub port: u16,
     /// yt-dlp's `--cookies-from-browser` value, "BROWSER:PROFILE_DIR".
     pub cookies: Option<String>,
-    /// The yt-dlp and ffmpeg this build runs.
-    pub tools: Tools,
+    /// Where the downloaded tools live.
+    tools_dir: PathBuf,
+    /// The downloaded tools, once ready.
+    tools: Arc<OnceCell<Tools>>,
     pub jobs: Arc<Mutex<Vec<Job>>>,
     /// When the page last sent a heartbeat.
     last_seen: Arc<Mutex<Option<Instant>>>,
+    /// A page said it is closing, and none has sent a heartbeat since.
+    closing: Arc<AtomicBool>,
     started: Instant,
 }
 
 impl App {
-    pub fn new(out: PathBuf, port: u16, cookies: Option<String>, tools: Tools) -> Self {
+    pub fn new(out: PathBuf, port: u16, cookies: Option<String>, tools_dir: PathBuf) -> Self {
         App {
             out,
             port,
             cookies,
-            tools,
+            tools_dir,
+            tools: Arc::default(),
             jobs: Arc::default(),
             last_seen: Arc::default(),
+            closing: Arc::default(),
             started: Instant::now(),
         }
+    }
+
+    /// The tools, downloaded by the first caller. A failed download is retried by the next.
+    pub async fn tools(&self) -> Result<Tools, String> {
+        self.tools
+            .get_or_try_init(|| async {
+                let dir = self.tools_dir.clone();
+                tokio::task::spawn_blocking(move || tools::prepare(&dir))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| format!("Could not set up the download tools: {e:#}"))
+            })
+            .await
+            .cloned()
     }
 
     /// Record that a page is still open.
     pub fn touch(&self) {
         *self.last_seen.lock().unwrap() = Some(Instant::now());
+        self.closing.store(false, Ordering::Relaxed);
+    }
+
+    /// Record that a page is closing.
+    pub fn closing(&self) {
+        self.closing.store(true, Ordering::Relaxed);
     }
 
     /// A page is open or a download is running.
@@ -54,6 +84,7 @@ impl App {
             return true;
         }
         match *self.last_seen.lock().unwrap() {
+            Some(seen) if self.closing.load(Ordering::Relaxed) => seen.elapsed() < CLOSING_GRACE,
             Some(seen) => seen.elapsed() < IDLE_GRACE,
             None => self.started.elapsed() < STARTUP_GRACE,
         }
@@ -87,5 +118,40 @@ impl App {
             .and_then(|s| s.to_str().ok())
             .is_none_or(|s| s == "same-origin" || s == "none");
         host_ok && origin_ok && fetch_ok
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn request(pairs: &[(&'static str, &'static str)]) -> bool {
+        let app = App::new("/".into(), 8765, None, "/".into());
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(*name, HeaderValue::from_static(value));
+        }
+        app.trusted(&headers)
+    }
+
+    #[test]
+    fn trusted_allows_our_page_and_blocks_other_sites() {
+        assert!(request(&[("host", "127.0.0.1:8765")]));
+        assert!(request(&[
+            ("host", "localhost:8765"),
+            ("origin", "http://localhost:8765"),
+            ("sec-fetch-site", "same-origin"),
+        ]));
+        assert!(!request(&[]));
+        assert!(!request(&[("host", "evil.example:8765")]));
+        assert!(!request(&[
+            ("host", "127.0.0.1:8765"),
+            ("origin", "https://evil.example"),
+        ]));
+        assert!(!request(&[
+            ("host", "127.0.0.1:8765"),
+            ("sec-fetch-site", "cross-site"),
+        ]));
     }
 }

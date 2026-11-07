@@ -25,7 +25,9 @@ pub fn find(out: &Path, name: &str) -> Result<PathBuf, String> {
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)));
-    if name.contains('/') || name.starts_with('.') || !path.is_file() || !video {
+    // Windows also treats `\\` and `C:` as path syntax.
+    let plain = !name.contains(['/', '\\', ':']) && !name.starts_with('.');
+    if !plain || !path.is_file() || !video {
         return Err(format!("{name} not found."));
     }
     Ok(path)
@@ -83,12 +85,13 @@ pub fn delete(out: &Path, name: &str) -> Result<(), String> {
 }
 
 /// A file name without extension: invalid characters replaced, a typed video extension
-/// dropped, and cut to fit the file name length limit.
+/// dropped, and cut to fit the file name length limit. `$` goes too, because yt-dlp expands
+/// `$HOME` in its output template and has no escape for it.
 pub fn clean_name(name: &str) -> String {
     let name: String = name
         .chars()
         .map(|c| {
-            if "/\\:*?\"<>|".contains(c) || c.is_control() {
+            if "/\\:*?\"<>|$".contains(c) || c.is_control() {
                 '_'
             } else {
                 c
@@ -105,7 +108,22 @@ pub fn clean_name(name: &str) -> String {
     while !name.is_char_boundary(end) {
         end -= 1;
     }
-    name[..end].trim_end().to_string()
+    let name = name[..end].trim_end_matches([' ', '.']);
+    // Windows reserves these names whatever the extension.
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.ends_with(|c: char| c.is_ascii_digit()));
+    if reserved {
+        format!("_{name}")
+    } else {
+        name.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -118,6 +136,25 @@ mod tests {
         assert_eq!(clean_name("song.mp3"), "song.mp3");
         assert_eq!(clean_name("..hidden.."), "hidden");
         assert_eq!(clean_name("50% off"), "50% off");
+        assert_eq!(clean_name("$HOME"), "_HOME");
+        assert_eq!(clean_name("con"), "_con");
+        assert_eq!(clean_name("COM1.live"), "_COM1.live");
+        assert_eq!(clean_name("console"), "console");
+    }
+
+    #[test]
+    fn find_rejects_path_syntax() {
+        let dir = std::env::temp_dir();
+        for name in [
+            "../a.mp4",
+            "a/b.mp4",
+            "..\\a.mp4",
+            "x\\..\\a.mp4",
+            "C:\\a.mp4",
+            ".a.mp4",
+        ] {
+            assert!(find(&dir, name).is_err(), "{name}");
+        }
     }
 
     #[test]

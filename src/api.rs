@@ -18,13 +18,14 @@ use crate::library::{self, VideoFile};
 
 /// The Svelte build, embedded at compile time.
 #[derive(Embed)]
-#[folder = "$YTCUT_WEB_DIST"]
+#[folder = "src/web/dist"]
 struct Web;
 
 pub fn router(app: App) -> Router {
     Router::new()
         .route("/", get(static_asset))
         .route("/alive", post(alive))
+        .route("/bye", post(bye))
         .route("/jobs", get(jobs))
         .route("/files", get(files))
         .route("/info", get(info))
@@ -58,6 +59,12 @@ async fn static_asset(uri: Uri) -> Response {
 /// A page is still open. It posts here once a second while it is alive.
 async fn alive(State(app): State<App>) -> StatusCode {
     app.touch();
+    StatusCode::NO_CONTENT
+}
+
+/// A page is closing. Another open page cancels this with its next heartbeat.
+async fn bye(State(app): State<App>) -> StatusCode {
+    app.closing();
     StatusCode::NO_CONTENT
 }
 
