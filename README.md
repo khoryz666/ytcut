@@ -18,7 +18,7 @@ Or with a package manager:
 cargo install --git https://github.com/khoryz666/ytcut
 
 # Nix
-nix run github:khoryz666/ytcut
+nix profile install github:khoryz666/ytcut
 ```
 
 The first run needs internet. It downloads yt-dlp (about 200 MB on Linux) — and ffmpeg and Deno only if you don't already have them — checks them against the checksums their projects publish, and keeps them in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows). These are glibc binaries, so Alpine (musl) can't run them; on NixOS set `programs.nix-ld.enable = true;`.
