@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use axum::http::{header, HeaderMap};
 
 use crate::downloads::Job;
+use crate::tools::Tools;
 
 /// How long an idle server waits for a page at startup.
 pub const STARTUP_GRACE: Duration = Duration::from_secs(60);
@@ -21,6 +22,8 @@ pub struct App {
     pub port: u16,
     /// yt-dlp's `--cookies-from-browser` value, "BROWSER:PROFILE_DIR".
     pub cookies: Option<String>,
+    /// The yt-dlp and ffmpeg this build runs.
+    pub tools: Tools,
     pub jobs: Arc<Mutex<Vec<Job>>>,
     /// When the page last sent a heartbeat.
     last_seen: Arc<Mutex<Option<Instant>>>,
@@ -28,11 +31,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(out: PathBuf, port: u16, cookies: Option<String>) -> Self {
+    pub fn new(out: PathBuf, port: u16, cookies: Option<String>, tools: Tools) -> Self {
         App {
             out,
             port,
             cookies,
+            tools,
             jobs: Arc::default(),
             last_seen: Arc::default(),
             started: Instant::now(),

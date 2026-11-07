@@ -138,8 +138,11 @@ pub async fn start(app: &App, form: StartForm) -> Result<(), String> {
 
 /// yt-dlp for a single video, signed in with the browser profile's cookies once it exists.
 fn yt_dlp(app: &App) -> Command {
-    let mut cmd = Command::new("yt-dlp");
+    let mut cmd = Command::new(&app.tools.yt_dlp);
     cmd.arg("--no-playlist");
+    if let Some(ffmpeg) = &app.tools.ffmpeg {
+        cmd.arg("--ffmpeg-location").arg(ffmpeg);
+    }
     let profile_exists = |spec: &&str| {
         spec.split_once(':')
             .is_some_and(|(_, dir)| Path::new(dir).is_dir())

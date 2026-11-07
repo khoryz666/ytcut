@@ -11,6 +11,7 @@ mod api;
 mod app;
 mod downloads;
 mod library;
+mod tools;
 
 use std::fs::File;
 use std::io;
@@ -49,7 +50,8 @@ async fn main() -> anyhow::Result<()> {
         .canonicalize()
         .context("video folder not found")?;
     let _lock = single_instance_lock()?;
-    let app = App::new(out.clone(), args.port, args.cookies_from_browser);
+    let tools = tools::prepare()?;
+    let app = App::new(out.clone(), args.port, args.cookies_from_browser, tools);
     let listener = TcpListener::bind(("127.0.0.1", args.port)).await?;
     println!("http://127.0.0.1:{}  ->  {}", args.port, out.display());
 

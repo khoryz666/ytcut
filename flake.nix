@@ -1,6 +1,9 @@
 {
   description = "ytcut: download YouTube songs, trim them, and play them on repeat";
 
+  # nixpkgs is the only flake input. The downloader and ffmpeg are release
+  # files pinned by URL and SHA-256 in tools.json, which the Windows build can
+  # read too; `scripts/update-tools.py` refreshes them.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:
@@ -8,6 +11,22 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       runtimeDeps = pkgs: [ pkgs.yt-dlp pkgs.ffmpeg ];
+      tools = builtins.fromJSON (builtins.readFile ./tools.json);
+
+      # The release files a built binary carries inside it. src/tools.rs
+      # gzip-compresses and unpacks them, so the program needs no Nix store.
+      fetchTool = pkgs: name:
+        let asset = tools.${name}.assets.${pkgs.stdenv.hostPlatform.system};
+        in pkgs.fetchurl { inherit (asset) url sha256; };
+      bundledTools = pkgs: {
+        yt-dlp = fetchTool pkgs "yt-dlp";
+        ffmpeg = pkgs.runCommand "ytcut-ffmpeg" {
+          nativeBuildInputs = [ pkgs.gnutar pkgs.xz ];
+        } ''
+          tar -xJf ${fetchTool pkgs "ffmpeg"} --wildcards '*/bin/ffmpeg' --strip-components=2
+          install -Dm755 ffmpeg $out/bin/ffmpeg
+        '';
+      };
     in
     {
       packages = forAllSystems (pkgs: rec {
@@ -33,17 +52,22 @@
           '';
         };
 
-        default = pkgs.rustPlatform.buildRustPackage {
+        # The Nix build links the system glibc and is used for development and CI.
+        # Releases instead build a fully static binary with the musl target; see
+        # .github/workflows/release.yml. Either way the embedded yt-dlp and ffmpeg
+        # are unpacked from tools.json at first start, so no other install is needed.
+        default = let tools = bundledTools pkgs; in pkgs.rustPlatform.buildRustPackage {
           pname = "ytcut";
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           # build.rs embeds this instead of running npm inside the sandbox.
-          env.YTCUT_WEB_DIST = "${web}";
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          postInstall = ''
-            wrapProgram $out/bin/ytcut --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDeps pkgs)}
-          '';
+          env = {
+            YTCUT_WEB_DIST = "${web}";
+            YTCUT_YTDLP = "${tools.yt-dlp}";
+            YTCUT_FFMPEG = "${tools.ffmpeg}/bin/ffmpeg";
+          };
+          buildFeatures = [ "bundle" ];
           meta.mainProgram = "ytcut";
         };
 

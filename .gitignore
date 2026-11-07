@@ -39,3 +39,6 @@ src/web/.vite/
 
 # rust
 target/
+
+# tools downloaded by scripts/fetch-tools.ps1
+tools/
