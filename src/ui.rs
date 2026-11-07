@@ -687,10 +687,6 @@ impl AppUi {
             KeyCode::Tab => {
                 self.focus = Focus::Playlist;
             }
-            KeyCode::Char('a') => {
-                self.focus = Focus::Add;
-                self.add_field = AddField::Url;
-            }
             KeyCode::Char('/') => {
                 self.command_input.clear();
                 self.focus = Focus::Command;
@@ -775,10 +771,6 @@ impl AppUi {
             }
             KeyCode::Tab => {
                 self.focus = Focus::Library;
-            }
-            KeyCode::Char('a') => {
-                self.focus = Focus::Add;
-                self.add_field = AddField::Url;
             }
             KeyCode::Char('/') => {
                 self.command_input.clear();
@@ -1525,7 +1517,7 @@ impl AppUi {
 
         if spans.is_empty() {
             spans.push(Span::styled(
-                " Tab pane · space pause · a add · / commands · ? help ",
+                " Tab pane · space pause · / commands · ? help ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -1714,7 +1706,6 @@ impl AppUi {
         \n\
           Tab           switch pane / field\n\
           d             delete song\n\
-          a             open download dialog (/add)\n\
           /             command palette\n\
           ?             this help\n\
         \n\
