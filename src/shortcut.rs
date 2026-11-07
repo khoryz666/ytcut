@@ -15,13 +15,11 @@ pub fn ensure() {
 #[cfg(target_os = "linux")]
 mod linux {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
-    /// A `.desktop` file in the app menu, the standard launcher on Linux.
+    /// A launcher in the app menu and on the desktop.
     pub fn ensure(exe: &Path) {
-        let Some(dir) = dirs::data_dir().map(|d| d.join("applications")) else {
-            return;
-        };
         let Some(exe) = exe.to_str() else {
             return;
         };
@@ -35,12 +33,30 @@ mod linux {
              StartupWMClass=ytcut\n",
             quote(exe)
         );
-        let file = dir.join("ytcut.desktop");
-        if fs::read_to_string(&file).ok().as_deref() == Some(content.as_str()) {
+        if let Some(dir) = dirs::data_dir().map(|d| d.join("applications")) {
+            write(&dir.join("ytcut.desktop"), &content, false);
+        }
+        if let Some(dir) = dirs::desktop_dir() {
+            write(&dir.join("ytcut.desktop"), &content, true);
+        }
+    }
+
+    /// Write the entry if it changed. A desktop launcher must be executable to open.
+    fn write(file: &Path, content: &str, executable: bool) {
+        if fs::read_to_string(file).ok().as_deref() == Some(content) {
             return;
         }
-        if fs::create_dir_all(&dir).is_ok() {
-            let _ = fs::write(&file, content);
+        let Some(dir) = file.parent() else {
+            return;
+        };
+        if fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        if fs::write(file, content).is_err() {
+            return;
+        }
+        if executable {
+            let _ = fs::set_permissions(file, fs::Permissions::from_mode(0o755));
         }
     }
 
