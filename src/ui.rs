@@ -87,6 +87,64 @@ impl Default for SettingsState {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct PaletteItem {
+    pub cmd: &'static str,
+    pub args: &'static str,
+    pub desc: &'static str,
+}
+
+pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
+    PaletteItem {
+        cmd: "/add",
+        args: "<url> [--name <name>] [--start <s>] [--end <e>]",
+        desc: "Download audio from YouTube",
+    },
+    PaletteItem {
+        cmd: "/settings",
+        args: "",
+        desc: "Open settings (folder, browser, autoupdate, volume)",
+    },
+    PaletteItem {
+        cmd: "/dir",
+        args: "<path>",
+        desc: "Set music library folder",
+    },
+    PaletteItem {
+        cmd: "/update",
+        args: "",
+        desc: "Update yt-dlp and ytcut to the latest version",
+    },
+    PaletteItem {
+        cmd: "/help",
+        args: "",
+        desc: "Open keybindings and command documentation",
+    },
+    PaletteItem {
+        cmd: "/quit",
+        args: "",
+        desc: "Exit ytcut",
+    },
+];
+
+pub fn matching_commands(input: &str) -> Vec<&'static PaletteItem> {
+    let clean = input.trim().strip_prefix('/').unwrap_or(input.trim()).to_lowercase();
+    let query_cmd = clean.split_whitespace().next().unwrap_or_default();
+
+    if query_cmd.is_empty() {
+        return COMMAND_PALETTE_ITEMS.iter().collect();
+    }
+
+    COMMAND_PALETTE_ITEMS
+        .iter()
+        .filter(|item| {
+            let item_clean = item.cmd.strip_prefix('/').unwrap_or(item.cmd);
+            item_clean.contains(query_cmd)
+                || item.desc.to_lowercase().contains(query_cmd)
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 pub enum PromptType {
     Delete(String),
@@ -113,6 +171,7 @@ pub struct AppUi {
     pub prompt: Option<PromptType>,
     pub status_message: Option<(String, Instant)>,
     pub command_input: String,
+    pub command_palette_selected: usize,
     settings: SettingsState,
     pub last_completed_jobs: usize,
     pub should_quit: bool,
@@ -145,6 +204,7 @@ impl AppUi {
             prompt: None,
             status_message: None,
             command_input: String::new(),
+            command_palette_selected: 0,
             settings: SettingsState::default(),
             last_completed_jobs: 0,
             should_quit: false,
@@ -317,22 +377,60 @@ impl AppUi {
     }
 
     fn handle_command_key(&mut self, code: KeyCode) {
+        let matching = matching_commands(&self.command_input);
         match code {
             KeyCode::Esc => {
                 self.command_input.clear();
+                self.command_palette_selected = 0;
                 self.focus = Focus::Library;
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                if !matching.is_empty() {
+                    self.command_palette_selected =
+                        (self.command_palette_selected + 1) % matching.len();
+                }
+            }
+            KeyCode::Up | KeyCode::BackTab => {
+                if !matching.is_empty() {
+                    if self.command_palette_selected == 0 {
+                        self.command_palette_selected = matching.len() - 1;
+                    } else {
+                        self.command_palette_selected -= 1;
+                    }
+                }
             }
             KeyCode::Enter => {
                 let input = self.command_input.trim().to_string();
+                if let Some(item) = matching.get(self.command_palette_selected) {
+                    let clean = input.strip_prefix('/').unwrap_or(&input);
+                    let has_args = clean.contains(char::is_whitespace);
+                    let item_clean = item.cmd.strip_prefix('/').unwrap_or(item.cmd);
+                    if !has_args
+                        && (item.cmd == "/add" || item.cmd == "/dir")
+                        && (clean.is_empty() || clean == item_clean)
+                    {
+                        self.command_input = format!("{} ", item.cmd);
+                        return;
+                    }
+                    if !clean.contains(char::is_whitespace) && clean == item_clean {
+                        self.command_input.clear();
+                        self.command_palette_selected = 0;
+                        self.execute_command(item.cmd);
+                        return;
+                    }
+                }
                 self.command_input.clear();
+                self.command_palette_selected = 0;
                 self.execute_command(&input);
             }
             KeyCode::Backspace => {
                 self.command_input.pop();
+                self.command_palette_selected = 0;
                 self.apply_command_filter();
             }
             KeyCode::Char(c) => {
                 self.command_input.push(c);
+                self.command_palette_selected = 0;
                 self.apply_command_filter();
             }
             _ => {}
@@ -344,15 +442,20 @@ impl AppUi {
         if is_command(&self.command_input) {
             return;
         }
-        self.search_query = self.command_input.clone();
+        let query = self
+            .command_input
+            .strip_prefix('/')
+            .unwrap_or(&self.command_input);
+        self.search_query = query.to_string();
         self.apply_search_filter();
     }
 
     fn execute_command(&mut self, input: &str) {
         let trimmed = input.trim();
-        let (cmd, rest) = match trimmed.split_once(char::is_whitespace) {
+        let clean = trimmed.strip_prefix('/').unwrap_or(trimmed);
+        let (cmd, rest) = match clean.split_once(char::is_whitespace) {
             Some((c, r)) => (c, r.trim()),
-            None => (trimmed, ""),
+            None => (clean, ""),
         };
         match cmd {
             "settings" | "set" => {
@@ -387,7 +490,7 @@ impl AppUi {
                 self.should_quit = true;
             }
             _ => {
-                self.search_query = trimmed.to_string();
+                self.search_query = clean.to_string();
                 self.apply_search_filter();
                 self.focus = Focus::Library;
             }
@@ -558,7 +661,7 @@ impl AppUi {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::BackTab => {
                 self.focus = Focus::Playlist;
             }
             KeyCode::Char('a') => {
@@ -665,7 +768,7 @@ impl AppUi {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::BackTab => {
                 self.focus = Focus::Library;
             }
             KeyCode::Char('a') => {
@@ -862,11 +965,11 @@ impl AppUi {
                 self.settings.editing_dir = false;
                 self.focus = Focus::Library;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
                 self.settings.editing_dir = false;
                 self.settings.selected = self.settings.selected.next();
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
                 self.settings.editing_dir = false;
                 self.settings.selected = self.settings.selected.prev();
             }
@@ -940,7 +1043,7 @@ impl AppUi {
             self.render_prompt(f, prompt, size);
         }
         if self.focus == Focus::Command {
-            self.render_command_bar(f, size);
+            self.render_command_palette(f, size);
         }
         if self.focus == Focus::Settings {
             self.render_settings(f, size);
@@ -961,7 +1064,7 @@ impl AppUi {
         };
 
         let title = if is_focused {
-            " Add [Tab: next field · Enter: download · Esc: cancel] "
+            " Add [Tab / Shift+Tab field · Esc cancel] "
         } else {
             " Add [a] "
         };
@@ -1355,7 +1458,7 @@ impl AppUi {
 
         if spans.is_empty() {
             spans.push(Span::styled(
-                " Enter play · space pause · a add · R rename · / commands · ? help · q quit ",
+                " Tab / Shift+Tab pane · space pause · a add · R rename · / commands · ? help · q quit ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -1363,23 +1466,102 @@ impl AppUi {
         f.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
-    fn render_command_bar(&self, f: &mut ratatui::Frame, area: Rect) {
-        let bar = Rect {
-            x: area.x,
-            y: area.y + area.height.saturating_sub(1),
-            width: area.width,
-            height: 1,
+    fn render_command_palette(&self, f: &mut ratatui::Frame, area: Rect) {
+        let matching = matching_commands(&self.command_input);
+        let count = matching.len().max(1);
+        let height = ((count as u16) + 4).min(12).min(area.height.saturating_sub(4));
+        let width = 74.min(area.width.saturating_sub(4));
+
+        let popup = Rect {
+            x: area.x + (area.width.saturating_sub(width)) / 2,
+            y: area.y + 2,
+            width,
+            height,
         };
-        let hint = if self.command_input.is_empty() {
-            "  command/search — settings · dir <path> · add <url> · update · help · quit"
-        } else {
-            ""
-        };
-        let text = format!("/ {}{}_", self.command_input, hint);
+        f.render_widget(Clear, popup);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Command Palette [Tab / Shift+Tab select · Esc close] ")
+            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        f.render_widget(block, popup);
+
+        let inner = popup.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // input line
+                Constraint::Length(1), // separator
+                Constraint::Min(1),    // suggestions
+            ])
+            .split(inner);
+
+        let clean = self
+            .command_input
+            .strip_prefix('/')
+            .unwrap_or(&self.command_input);
+        let input_text = format!("> /{clean}_");
         f.render_widget(
-            Paragraph::new(text).style(Style::default().fg(Color::Black).bg(Color::Yellow)),
-            bar,
+            Paragraph::new(input_text).style(
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            chunks[0],
         );
+
+        let sep: String = "─".repeat(chunks[1].width as usize);
+        f.render_widget(
+            Paragraph::new(sep).style(Style::default().fg(Color::DarkGray)),
+            chunks[1],
+        );
+
+        let items: Vec<ListItem> = if matching.is_empty() {
+            vec![ListItem::new(Span::styled(
+                format!("  Search library: \"{clean}\""),
+                Style::default().fg(Color::DarkGray),
+            ))]
+        } else {
+            matching
+                .iter()
+                .enumerate()
+                .map(|(idx, item)| {
+                    let is_selected = idx == self.command_palette_selected;
+                    let marker = if is_selected { "▶ " } else { "  " };
+                    let cmd_text = if item.args.is_empty() {
+                        format!("{marker}{:<10} ", item.cmd)
+                    } else {
+                        format!("{marker}{} {} ", item.cmd, item.args)
+                    };
+
+                    let (cmd_style, desc_style, bg_style) = if is_selected {
+                        (
+                            Style::default().fg(Color::Black).add_modifier(Modifier::BOLD),
+                            Style::default().fg(Color::Black),
+                            Style::default().bg(Color::Yellow).fg(Color::Black),
+                        )
+                    } else {
+                        (
+                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                            Style::default().fg(Color::DarkGray),
+                            Style::default(),
+                        )
+                    };
+
+                    let line = Line::from(vec![
+                        Span::styled(cmd_text, cmd_style),
+                        Span::styled(item.desc, desc_style),
+                    ]);
+                    ListItem::new(line).style(bg_style)
+                })
+                .collect()
+        };
+
+        f.render_widget(List::new(items), chunks[2]);
     }
 
     fn dir_display(&self) -> String {
@@ -1433,7 +1615,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Settings ")
+            .title(" Settings [Tab / Shift+Tab field · Esc back] ")
             .border_style(Style::default().fg(Color::Yellow));
         f.render_widget(block, popup);
 
@@ -1447,7 +1629,7 @@ impl AppUi {
             .split(inner);
         f.render_widget(List::new(rows), chunks[0]);
         f.render_widget(
-            Paragraph::new(" ↑↓ select · ←→ change · Enter edit folder · Esc back ")
+            Paragraph::new(" Tab / Shift+Tab field · Esc back ")
                 .style(Style::default().fg(Color::DarkGray)),
             chunks[1],
         );
@@ -1463,25 +1645,33 @@ impl AppUi {
         let text = "\n\
         Navigation\n\
         \n\
-          ↑/↓ or j/k    move selection        Tab        switch pane\n\
-          Enter         play / confirm        a          add a song (URL)\n\
-          +             add to queue          d          delete (confirm)\n\
-          R             rename song           /          commands & search\n\
-          ?             this help             q / Esc    back / quit\n\
+          Tab           next pane / field\n\
+          Shift+Tab     previous pane / field\n\
+          j / k         move up / down\n\
+          +             add to queue\n\
+          a             add song (URL)\n\
+          R             rename song\n\
+          d             delete song\n\
+          /             command palette & search\n\
+          ?             this help\n\
+          q / Esc       back / quit\n\
         \n\
         Playback\n\
         \n\
-          space         play / pause          n / p      next / previous\n\
-          s             shuffle               r          repeat one\n\
-          o             open YouTube (sign in)\n\
+          space         play / pause\n\
+          n / p         next / previous\n\
+          s             toggle shuffle\n\
+          r             toggle repeat one\n\
+          o             open YouTube in browser (sign in)\n\
         \n\
         Commands (/)\n\
         \n\
-          settings      folder, device, browser, auto-update, volume\n\
-          dir <path>    set the library folder\n\
-          add <args>    download a song (e.g. /add <url> [--name <name>] [--start <s>] [--end <e>])\n\
-          update        check for updates now\n\
-          quit          exit\n\
+          /add <args>   download audio (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
+          /settings     open settings (folder, browser, auto-update, volume)\n\
+          /dir <path>   switch or create library folder\n\
+          /update       update yt-dlp and ytcut to the latest version\n\
+          /help         show this help documentation\n\
+          /quit         exit application\n\
         ";
         f.render_widget(Paragraph::new(text).block(block), popup);
     }
@@ -1497,7 +1687,7 @@ impl AppUi {
                     .title(" Confirm Delete ")
                     .border_style(Style::default().fg(Color::Red));
                 let text = format!(
-                    "\n  Delete '{name}'?\n\n  Press [y] to confirm, [n] or [Esc] to cancel."
+                    "\n  Delete '{name}'?\n\n  [y] confirm, [n] or [Esc] cancel"
                 );
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
@@ -1507,8 +1697,7 @@ impl AppUi {
                     .borders(Borders::ALL)
                     .title(format!(" Rename '{old_name}' "))
                     .border_style(Style::default().fg(Color::Yellow));
-                let text =
-                    format!("\n  New name: {input}_\n\n  Press [Enter] to save, [Esc] to cancel.");
+                let text = format!("\n  New name: {input}_\n\n  [Esc] cancel");
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
             }
@@ -1686,5 +1875,14 @@ mod tests {
             shlex_split("https://youtu.be/xyz 'song name' 10 20"),
             vec!["https://youtu.be/xyz", "song name", "10", "20"]
         );
+    }
+
+    #[test]
+    fn matching_commands_filters_correctly() {
+        assert_eq!(matching_commands("").len(), COMMAND_PALETTE_ITEMS.len());
+        assert_eq!(matching_commands("/").len(), COMMAND_PALETTE_ITEMS.len());
+        assert_eq!(matching_commands("/set")[0].cmd, "/settings");
+        assert_eq!(matching_commands("quit")[0].cmd, "/quit");
+        assert_eq!(matching_commands("/add")[0].cmd, "/add");
     }
 }
