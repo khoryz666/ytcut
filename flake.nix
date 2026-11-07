@@ -9,7 +9,7 @@
       packages = forAllSystems (pkgs: {
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "ytcut";
-          version = "0.3.1";
+          version = "0.4.0";
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
             filter = path: type:
