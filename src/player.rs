@@ -5,8 +5,25 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use crossterm::event::KeyCode;
 use rodio::Player as AudioPlayer;
 use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Source};
+
+/// Outcome of handling a playback control key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlOutcome {
+    /// The key performed a playback action with no status message.
+    Handled,
+    /// The key performed an action; show this status message.
+    Message(String),
+    /// The key was not a playback control.
+    Unhandled,
+}
+
+/// A short `"Name: ON"` / `"Name: OFF"` label for a toggled setting.
+fn toggle_label(on: bool, name: &str) -> String {
+    format!("{name}: {}", if on { "ON" } else { "OFF" })
+}
 
 pub struct Player {
     _sink: MixerDeviceSink,
@@ -133,6 +150,36 @@ impl Player {
 
     pub fn toggle_repeat(&mut self) {
         self.repeat_one = !self.repeat_one;
+    }
+
+    /// Handle a playback control key (`space` / `n` / `p` / `s` / `r`).
+    ///
+    /// Shared by the TUI and the CLI `play` subcommand so key bindings live in
+    /// one place. Returns an optional status message for the caller to show.
+    pub fn handle_control_key(&mut self, code: KeyCode) -> ControlOutcome {
+        match code {
+            KeyCode::Char(' ') => {
+                self.toggle_pause();
+                ControlOutcome::Handled
+            }
+            KeyCode::Char('n') => match self.next() {
+                Ok(()) => ControlOutcome::Handled,
+                Err(e) => ControlOutcome::Message(format!("Error: {e:#}")),
+            },
+            KeyCode::Char('p') => match self.prev() {
+                Ok(()) => ControlOutcome::Handled,
+                Err(e) => ControlOutcome::Message(format!("Error: {e:#}")),
+            },
+            KeyCode::Char('s') => {
+                self.toggle_shuffle();
+                ControlOutcome::Message(toggle_label(self.shuffle, "Shuffle"))
+            }
+            KeyCode::Char('r') => {
+                self.toggle_repeat();
+                ControlOutcome::Message(toggle_label(self.repeat_one, "Repeat-one"))
+            }
+            _ => ControlOutcome::Unhandled,
+        }
     }
 
     pub fn current_song_index(&self) -> Option<usize> {

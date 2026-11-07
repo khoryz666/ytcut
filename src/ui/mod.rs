@@ -16,7 +16,7 @@ use ratatui::Terminal;
 use crate::config::Config;
 use crate::downloads::{self, Job, StartOptions, Status};
 use crate::library::{self, Song};
-use crate::player::Player;
+use crate::player::{ControlOutcome, Player};
 use crate::tools::Tools;
 
 mod palette;
@@ -29,7 +29,7 @@ use palette::matching_commands;
 use text::shlex_split;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Focus {
+enum Focus {
     Library,
     Playlist,
     Add,
@@ -40,7 +40,7 @@ pub enum Focus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AddField {
+enum AddField {
     Url,
     Name,
     Start,
@@ -92,34 +92,34 @@ impl Default for SettingsState {
 }
 
 #[derive(Clone, Debug)]
-pub enum PromptType {
+enum PromptType {
     Delete(String),
 }
 
-pub struct AppUi {
-    pub library_dir: PathBuf,
-    pub tools: Option<Tools>,
-    pub player: Option<Player>,
-    pub config: Config,
-    pub songs: Vec<Song>,
-    pub filtered_indices: Vec<usize>,
-    pub lib_selected: usize,
-    pub playlist_selected: usize,
-    pub focus: Focus,
-    pub jobs: Arc<Mutex<Vec<Job>>>,
-    pub search_query: String,
-    pub add_url: String,
-    pub add_name: String,
-    pub add_start: String,
-    pub add_end: String,
-    pub add_field: AddField,
-    pub prompt: Option<PromptType>,
-    pub status_message: Option<(String, Instant)>,
-    pub command_input: String,
-    pub command_palette_selected: usize,
+struct AppUi {
+    library_dir: PathBuf,
+    tools: Option<Tools>,
+    player: Option<Player>,
+    config: Config,
+    songs: Vec<Song>,
+    filtered_indices: Vec<usize>,
+    lib_selected: usize,
+    playlist_selected: usize,
+    focus: Focus,
+    jobs: Arc<Mutex<Vec<Job>>>,
+    search_query: String,
+    add_url: String,
+    add_name: String,
+    add_start: String,
+    add_end: String,
+    add_field: AddField,
+    prompt: Option<PromptType>,
+    status_message: Option<(String, Instant)>,
+    command_input: String,
+    command_palette_selected: usize,
     settings: SettingsState,
-    pub last_completed_jobs: usize,
-    pub should_quit: bool,
+    last_completed_jobs: usize,
+    should_quit: bool,
 }
 
 impl AppUi {
@@ -607,59 +607,21 @@ impl AppUi {
 
     /// Playback controls and sign-in, shared by the library and queue panes.
     fn handle_common_key(&mut self, code: KeyCode) -> bool {
-        match code {
-            KeyCode::Char('o') => {
-                let _ = open::that_detached("https://www.youtube.com/");
-                self.set_status("Opened YouTube in browser for sign-in.");
+        if code == KeyCode::Char('o') {
+            let _ = open::that_detached("https://www.youtube.com/");
+            self.set_status("Opened YouTube in browser for sign-in.");
+            return true;
+        }
+        let Some(player) = &mut self.player else {
+            return false;
+        };
+        match player.handle_control_key(code) {
+            ControlOutcome::Message(msg) => {
+                self.set_status(msg);
                 true
             }
-            KeyCode::Char(' ') => {
-                if let Some(player) = &mut self.player {
-                    player.toggle_pause();
-                }
-                true
-            }
-            KeyCode::Char('n') => {
-                if let Some(Err(e)) = self.player.as_mut().map(|p| p.next()) {
-                    self.set_status(format!("Error: {e:#}"));
-                }
-                true
-            }
-            KeyCode::Char('p') => {
-                if let Some(Err(e)) = self.player.as_mut().map(|p| p.prev()) {
-                    self.set_status(format!("Error: {e:#}"));
-                }
-                true
-            }
-            KeyCode::Char('s') => {
-                let msg = self.player.as_mut().map(|p| {
-                    p.toggle_shuffle();
-                    if p.shuffle {
-                        "Shuffle: ON"
-                    } else {
-                        "Shuffle: OFF"
-                    }
-                });
-                if let Some(msg) = msg {
-                    self.set_status(msg);
-                }
-                true
-            }
-            KeyCode::Char('r') => {
-                let msg = self.player.as_mut().map(|p| {
-                    p.toggle_repeat();
-                    if p.repeat_one {
-                        "Repeat-one: ON"
-                    } else {
-                        "Repeat-one: OFF"
-                    }
-                });
-                if let Some(msg) = msg {
-                    self.set_status(msg);
-                }
-                true
-            }
-            _ => false,
+            ControlOutcome::Handled => true,
+            ControlOutcome::Unhandled => false,
         }
     }
 

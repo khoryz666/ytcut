@@ -286,16 +286,9 @@ fn main() -> Result<()> {
                                 {
                                     break
                                 }
-                                KeyCode::Char(' ') => player.toggle_pause(),
-                                KeyCode::Char('n') => {
-                                    let _ = player.next();
+                                code => {
+                                    let _ = player.handle_control_key(code);
                                 }
-                                KeyCode::Char('p') => {
-                                    let _ = player.prev();
-                                }
-                                KeyCode::Char('s') => player.toggle_shuffle(),
-                                KeyCode::Char('r') => player.toggle_repeat(),
-                                _ => {}
                             }
                         }
                     }
