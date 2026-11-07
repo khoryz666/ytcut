@@ -1,16 +1,12 @@
 name: Update dependencies
 
 # Runs `cargo update` on a six-month cadence, verifies the build still passes,
-# bumps the patch version, and pushes a tag that triggers the release workflow.
+# bumps the patch version, pushes a tag, and triggers the release workflow — all
+# with the built-in GITHUB_TOKEN, so no secret setup is required.
 #
 # yt-dlp, ffmpeg and Deno are deliberately excluded: they are fetched as
 # "latest" at first run (src/tools.rs), and yt-dlp self-updates before every
 # download because YouTube keeps breaking old versions.
-#
-# To let the pushed tag trigger `release.yml`, add a repository secret named
-# `RELEASE_PAT` (a fine-grained PAT with Contents: read & write, or a classic
-# `repo` scope PAT). GitHub's built-in `GITHUB_TOKEN` does not re-trigger
-# workflows, so the push below authenticates with the PAT instead.
 
 on:
   schedule:
@@ -71,7 +67,14 @@ jobs:
           git add Cargo.toml Cargo.lock flake.nix
           git commit -m "chore(deps): update dependencies to v${{ steps.bump.outputs.new }}"
           git tag "v${{ steps.bump.outputs.new }}"
-          git remote set-url origin \
-            "https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git"
           git push origin HEAD
           git push origin "v${{ steps.bump.outputs.new }}"
+
+      - name: Trigger release workflow
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run release.yml \
+            --ref "v${{ steps.bump.outputs.new }}" \
+            -f tag="v${{ steps.bump.outputs.new }}"

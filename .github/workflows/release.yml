@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.3.2)'
+        required: false
 
 permissions:
   contents: read
@@ -19,6 +24,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}

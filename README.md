@@ -109,4 +109,4 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 Set the version in `Cargo.toml` and `flake.nix`, then push a tag with the same version, like `v0.3.0`. [`release.yml`](.github/workflows/release.yml) builds both binaries and publishes them; running copies pick them up on their next start.
 
-Dependency updates are automated: [`update-deps.yml`](.github/workflows/update-deps.yml) runs every six months, updates the crates, checks the build still passes, bumps the patch version, and pushes a tag. To let that tag trigger a release automatically, add a `RELEASE_PAT` secret with `contents: write` access (see that workflow).
+Dependency updates are automated: [`update-deps.yml`](.github/workflows/update-deps.yml) runs every six months, updates the crates, checks the build still passes, bumps the patch version, pushes a tag, and triggers the release — no setup required.
