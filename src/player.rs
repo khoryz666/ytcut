@@ -53,12 +53,14 @@ fn silence_alsa() {
 #[cfg(not(target_os = "linux"))]
 fn silence_alsa() {}
 
-/// Open the output device, preferring a connected Bluetooth earphone/headset or the
-/// computer's speakers over HDMI/DisplayPort, falling back to the system default.
+/// Open an output device, preferring the PipeWire/PulseAudio server (which routes to the
+/// user's default sink — e.g. a Bluetooth speaker) and falling back to analog speakers.
 fn open_sink() -> Result<MixerDeviceSink> {
-    if let Some(device) = choose_output_device() {
-        if let Ok(sink) =
-            DeviceSinkBuilder::from_device(device).and_then(|b| b.open_sink_or_fallback())
+    // Try devices in order of preference: the PipeWire/PulseAudio server (which follows
+    // the user's default sink, e.g. a Bluetooth earphone) first, then analog speakers.
+    for device in ranked_devices() {
+        if let Ok(sink) = DeviceSinkBuilder::from_device(device)
+            .and_then(|b| b.with_error_callback(|_| {}).open_sink_or_fallback())
         {
             return Ok(sink);
         }
@@ -66,58 +68,37 @@ fn open_sink() -> Result<MixerDeviceSink> {
     DeviceSinkBuilder::open_default_sink().context("no usable output device")
 }
 
-/// Pick the device most likely to be what the user wants to hear: Bluetooth first,
-/// then speakers/analog, avoiding HDMI/DisplayPort and virtual/null outputs.
-fn choose_output_device() -> Option<cpal::Device> {
-    let host = cpal::default_host();
-    let devices: Vec<cpal::Device> = host.output_devices().ok()?.collect();
-    if devices.is_empty() {
-        return host.default_output_device();
-    }
+/// Output devices, best first.
+fn ranked_devices() -> Vec<cpal::Device> {
     let name_of = |d: &cpal::Device| {
         d.description()
-            .map(|desc| desc.name().to_string())
+            .map(|x| x.name().to_string())
             .unwrap_or_default()
     };
+    let mut devices: Vec<cpal::Device> = cpal::default_host()
+        .output_devices()
+        .map(|d| d.collect())
+        .unwrap_or_default();
+    devices.sort_by_key(|d| std::cmp::Reverse(device_score(&name_of(d))));
     devices
-        .into_iter()
-        .max_by_key(|d| device_score(&name_of(d)))
 }
 
 fn device_score(name: &str) -> i32 {
     let n = name.to_lowercase();
-    let mut score = 0;
-    // Bluetooth earphones / headsets are the top choice.
-    if n.contains("bluetooth")
-        || n.contains("bluez")
-        || n.contains("headset")
-        || n.contains("airpod")
-        || n.contains("earbud")
-        || n.contains("earphone")
-    {
-        score += 100;
-    }
-    // Computer speakers / analog / built-in output.
-    if n.contains("speaker")
-        || n.contains("analog")
-        || n.contains("headphone")
-        || n.contains("built-in")
-    {
-        score += 50;
-    }
-    // Avoid video outputs, virtual devices and the null sink.
-    if n.contains("hdmi")
+    if n.contains("sound server") {
+        100
+    } else if n.contains("analog") || n.contains("speaker") || n.contains("headphone") {
+        50
+    } else if n.contains("hdmi")
         || n.contains("displayport")
         || n.contains("monitor")
-        || n.contains("optical")
-        || n.contains("virtual")
-        || n.contains("dummy")
-        || n.contains("null")
         || n.contains("discard")
+        || n.contains("null")
     {
-        score -= 200;
+        -100
+    } else {
+        0
     }
-    score
 }
 
 impl Player {
