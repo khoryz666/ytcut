@@ -27,7 +27,7 @@ Linux needs ALSA (`libasound2`) installed — it is on nearly every desktop.
 
 ## Use it
 
-Run `ytcut` with no arguments to open the terminal interface. On the first run it asks where your music should live (change it later with `/settings`).
+Run `ytcut` with no arguments to open the terminal interface. Your songs are read from your Music folder automatically; change the folder later with `/settings` or `/dir <path>`.
 
 | Key | Action |
 |---|---|
@@ -49,15 +49,16 @@ To keep only part of a song, type the **Start** and **End** times (like `1:30`) 
 
 ```
 ytcut add  <URL> [--name N] [--start 1:30] [--end 2:00]   # download audio
-ytcut play [FILES...] [--shuffle] [--repeat]               # play files or the library
-ytcut list [DIR]                                           # list the library
-ytcut info <URL>                                           # title + duration
-ytcut mv <NAME> <NEW>                                      # rename
-ytcut rm <NAME>                                            # delete
-ytcut update [VERSION]                                     # update yt-dlp + self
+ytcut play [FILES...] [--shuffle] [--repeat] [--background]   # play files or the library; --background detaches
+ytcut list [DIR]                                              # list the library
+ytcut info <URL>                                              # title + duration
+ytcut mv <NAME> <NEW>                                         # rename
+ytcut rm <NAME>                                               # delete
+ytcut stop                                                    # stop the background player
+ytcut update [VERSION]                                        # update yt-dlp + self
 ```
 
-The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`. The settings screen also lets you pick the output device (ytcut prefers your speakers automatically), the sign-in browser, auto-update and volume.
+The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`. Sound follows your system output automatically, preferring a connected Bluetooth earphone or your speakers; the settings screen also covers the sign-in browser, auto-update and volume.
 
 ## Updates
 

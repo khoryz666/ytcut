@@ -2564,13 +2564,14 @@ dependencies = [
 
 [[package]]
 name = "ytcut"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
  "crossterm",
  "dirs",
  "flate2",
+ "libc",
  "lzma-rs",
  "open",
  "ratatui",

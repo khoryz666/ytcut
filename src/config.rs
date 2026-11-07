@@ -14,8 +14,6 @@ pub struct Config {
     pub browser: Option<String>,
     /// Auto-update policy: auto | notify | off.
     pub autoupdate: Option<String>,
-    /// Output device name; "auto" (or unset) picks the best available device.
-    pub output_device: Option<String>,
     /// Playback volume, 0.0 ..= 1.0.
     pub volume: Option<f32>,
 }

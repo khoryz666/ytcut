@@ -53,10 +53,10 @@ fn silence_alsa() {
 #[cfg(not(target_os = "linux"))]
 fn silence_alsa() {}
 
-/// Open the output device: the preferred one if named, else the best available
-/// (preferring analog speakers over HDMI), falling back to the system default.
-fn open_sink(preferred_device: Option<&str>) -> Result<MixerDeviceSink> {
-    if let Some(device) = choose_output_device(preferred_device) {
+/// Open the output device, preferring a connected Bluetooth earphone/headset or the
+/// computer's speakers over HDMI/DisplayPort, falling back to the system default.
+fn open_sink() -> Result<MixerDeviceSink> {
+    if let Some(device) = choose_output_device() {
         if let Ok(sink) =
             DeviceSinkBuilder::from_device(device).and_then(|b| b.open_sink_or_fallback())
         {
@@ -66,9 +66,9 @@ fn open_sink(preferred_device: Option<&str>) -> Result<MixerDeviceSink> {
     DeviceSinkBuilder::open_default_sink().context("no usable output device")
 }
 
-/// Pick an output device: an explicit name first, else the one most likely to be
-/// real speakers (analog / headphone / speaker) rather than HDMI or DisplayPort.
-fn choose_output_device(preferred: Option<&str>) -> Option<cpal::Device> {
+/// Pick the device most likely to be what the user wants to hear: Bluetooth first,
+/// then speakers/analog, avoiding HDMI/DisplayPort and virtual/null outputs.
+fn choose_output_device() -> Option<cpal::Device> {
     let host = cpal::default_host();
     let devices: Vec<cpal::Device> = host.output_devices().ok()?.collect();
     if devices.is_empty() {
@@ -79,51 +79,51 @@ fn choose_output_device(preferred: Option<&str>) -> Option<cpal::Device> {
             .map(|desc| desc.name().to_string())
             .unwrap_or_default()
     };
-    let score = |name: &str| -> i32 {
-        let n = name.to_lowercase();
-        let mut s = 0;
-        if n.contains("analog")
-            || n.contains("speaker")
-            || n.contains("headphone")
-            || n.contains("built-in")
-        {
-            s += 10;
-        }
-        if n.contains("hdmi")
-            || n.contains("displayport")
-            || n.contains("optical")
-            || n.contains("null")
-        {
-            s -= 10;
-        }
-        s
-    };
-    if let Some(pref) = preferred {
-        let p = pref.to_lowercase();
-        if let Some(d) = devices
-            .iter()
-            .find(|d| name_of(d).to_lowercase().contains(&p))
-        {
-            return Some(d.clone());
-        }
-    }
-    devices.into_iter().max_by_key(|d| score(&name_of(d)))
+    devices
+        .into_iter()
+        .max_by_key(|d| device_score(&name_of(d)))
 }
 
-/// Human-readable names of the available output devices, for the settings screen.
-pub fn list_output_device_names() -> Vec<String> {
-    let Ok(devices) = cpal::default_host().output_devices() else {
-        return Vec::new();
-    };
-    devices
-        .filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
-        .collect()
+fn device_score(name: &str) -> i32 {
+    let n = name.to_lowercase();
+    let mut score = 0;
+    // Bluetooth earphones / headsets are the top choice.
+    if n.contains("bluetooth")
+        || n.contains("bluez")
+        || n.contains("headset")
+        || n.contains("airpod")
+        || n.contains("earbud")
+        || n.contains("earphone")
+    {
+        score += 100;
+    }
+    // Computer speakers / analog / built-in output.
+    if n.contains("speaker")
+        || n.contains("analog")
+        || n.contains("headphone")
+        || n.contains("built-in")
+    {
+        score += 50;
+    }
+    // Avoid video outputs, virtual devices and the null sink.
+    if n.contains("hdmi")
+        || n.contains("displayport")
+        || n.contains("monitor")
+        || n.contains("optical")
+        || n.contains("virtual")
+        || n.contains("dummy")
+        || n.contains("null")
+        || n.contains("discard")
+    {
+        score -= 200;
+    }
+    score
 }
 
 impl Player {
-    pub fn new(preferred_device: Option<&str>) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         silence_alsa();
-        let sink = open_sink(preferred_device).context("failed to open audio output device")?;
+        let sink = open_sink().context("failed to open audio output device")?;
         let player = AudioPlayer::connect_new(sink.mixer());
         Ok(Self {
             _sink: sink,
@@ -140,8 +140,8 @@ impl Player {
     }
 
     /// Try creating a player, or return None if no audio device is available.
-    pub fn try_new(preferred_device: Option<&str>) -> Option<Self> {
-        Self::new(preferred_device).ok()
+    pub fn try_new() -> Option<Self> {
+        Self::new().ok()
     }
 
     pub fn set_queue(&mut self, queue: Vec<PathBuf>) {

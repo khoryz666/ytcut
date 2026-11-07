@@ -32,7 +32,6 @@ pub enum Focus {
     Command,
     Settings,
     Help,
-    Onboarding,
     Prompt,
 }
 
@@ -47,7 +46,6 @@ pub enum AddField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsRow {
     Dir,
-    Device,
     Browser,
     Autoupdate,
     Volume,
@@ -56,8 +54,7 @@ enum SettingsRow {
 impl SettingsRow {
     fn next(self) -> Self {
         match self {
-            SettingsRow::Dir => SettingsRow::Device,
-            SettingsRow::Device => SettingsRow::Browser,
+            SettingsRow::Dir => SettingsRow::Browser,
             SettingsRow::Browser => SettingsRow::Autoupdate,
             SettingsRow::Autoupdate => SettingsRow::Volume,
             SettingsRow::Volume => SettingsRow::Dir,
@@ -66,8 +63,7 @@ impl SettingsRow {
     fn prev(self) -> Self {
         match self {
             SettingsRow::Dir => SettingsRow::Volume,
-            SettingsRow::Device => SettingsRow::Dir,
-            SettingsRow::Browser => SettingsRow::Device,
+            SettingsRow::Browser => SettingsRow::Dir,
             SettingsRow::Autoupdate => SettingsRow::Browser,
             SettingsRow::Volume => SettingsRow::Autoupdate,
         }
@@ -117,23 +113,15 @@ pub struct AppUi {
     pub status_message: Option<(String, Instant)>,
     pub command_input: String,
     settings: SettingsState,
-    pub onboarding: bool,
-    pub onboarding_input: String,
     pub should_quit: bool,
 }
 
 impl AppUi {
-    pub fn new(
-        library_dir: PathBuf,
-        tools: Option<Tools>,
-        config: Config,
-        first_run: bool,
-    ) -> Self {
-        let player = Player::try_new(config.output_device.as_deref());
+    pub fn new(library_dir: PathBuf, tools: Option<Tools>, config: Config) -> Self {
+        let player = Player::try_new();
         if let Some(p) = &player {
             p.set_volume(config.volume());
         }
-        let onboarding_input = library_dir.display().to_string();
         let jobs = Arc::new(Mutex::new(Vec::new()));
         let mut app = Self {
             library_dir,
@@ -144,11 +132,7 @@ impl AppUi {
             filtered_indices: Vec::new(),
             lib_selected: 0,
             playlist_selected: 0,
-            focus: if first_run {
-                Focus::Onboarding
-            } else {
-                Focus::Library
-            },
+            focus: Focus::Library,
             jobs,
             search_query: String::new(),
             add_url: String::new(),
@@ -160,8 +144,6 @@ impl AppUi {
             status_message: None,
             command_input: String::new(),
             settings: SettingsState::default(),
-            onboarding: first_run,
-            onboarding_input,
             should_quit: false,
         };
         app.refresh_songs();
@@ -250,7 +232,6 @@ impl AppUi {
             Focus::Command => self.handle_command_key(code),
             Focus::Settings => self.handle_settings_key(code),
             Focus::Help => self.handle_help_key(code),
-            Focus::Onboarding => self.handle_onboarding_key(code),
             Focus::Library => self.handle_library_key(code),
             Focus::Playlist => self.handle_playlist_key(code),
         }
@@ -735,22 +716,6 @@ impl AppUi {
         self.save_config();
     }
 
-    fn cycle_output_device(&mut self) {
-        let names = crate::player::list_output_device_names();
-        let next = match &self.config.output_device {
-            None => names.first().cloned(),
-            Some(cur) => {
-                let i = names.iter().position(|n| n == cur);
-                match i {
-                    Some(i) if i + 1 < names.len() => Some(names[i + 1].clone()),
-                    _ => None,
-                }
-            }
-        };
-        self.config.output_device = next;
-        self.save_config();
-    }
-
     fn adjust_volume(&mut self, delta: f32) {
         let v = (self.config.volume() + delta).clamp(0.0, 1.0);
         self.config.volume = Some(v);
@@ -787,20 +752,17 @@ impl AppUi {
                         self.settings.dir_buf = self.library_dir.display().to_string();
                     }
                 }
-                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => {}
             },
             KeyCode::Char('h') | KeyCode::Left => match self.settings.selected {
-                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => self.adjust_volume(-0.05),
                 SettingsRow::Dir => {}
             },
             KeyCode::Char('l') | KeyCode::Right => match self.settings.selected {
-                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => self.adjust_volume(0.05),
@@ -820,32 +782,6 @@ impl AppUi {
         match code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') | KeyCode::Enter => {
                 self.focus = Focus::Library;
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_onboarding_key(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Enter => {
-                let dir = self.onboarding_input.trim().to_string();
-                if !dir.is_empty() {
-                    self.set_library_dir(PathBuf::from(dir));
-                }
-                self.onboarding = false;
-                self.focus = Focus::Library;
-            }
-            KeyCode::Esc => {
-                // Persist the current folder so we don't prompt again.
-                self.set_library_dir(self.library_dir.clone());
-                self.onboarding = false;
-                self.focus = Focus::Library;
-            }
-            KeyCode::Backspace => {
-                self.onboarding_input.pop();
-            }
-            KeyCode::Char(c) => {
-                self.onboarding_input.push(c);
             }
             _ => {}
         }
@@ -880,9 +816,6 @@ impl AppUi {
         }
         if self.focus == Focus::Help {
             self.render_help(f, size);
-        }
-        if self.focus == Focus::Onboarding {
-            self.render_onboarding(f, size);
         }
     }
 
@@ -1323,20 +1256,11 @@ impl AppUi {
     }
 
     fn render_settings(&self, f: &mut ratatui::Frame, area: Rect) {
-        let popup = centered_rect(72, 50, area);
+        let popup = centered_rect(72, 55, area);
         f.render_widget(Clear, popup);
 
-        let volume_pct = format!("{}%", (self.config.volume() * 100.0).round() as i32);
         let rows = vec![
             self.settings_line(SettingsRow::Dir, "Library folder", self.dir_display()),
-            self.settings_line(
-                SettingsRow::Device,
-                "Output device",
-                self.config
-                    .output_device
-                    .clone()
-                    .unwrap_or_else(|| "auto".into()),
-            ),
             self.settings_line(
                 SettingsRow::Browser,
                 "Sign-in browser",
@@ -1350,14 +1274,33 @@ impl AppUi {
                     .clone()
                     .unwrap_or_else(|| "auto".into()),
             ),
-            self.settings_line(SettingsRow::Volume, "Volume", volume_pct),
+            self.settings_line(
+                SettingsRow::Volume,
+                "Volume",
+                volume_bar(self.config.volume()),
+            ),
         ];
 
         let block = Block::default()
             .borders(Borders::ALL)
             .title(" Settings ")
             .border_style(Style::default().fg(Color::Yellow));
-        f.render_widget(List::new(rows).block(block), popup);
+        f.render_widget(block, popup);
+
+        let inner = popup.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 2,
+        });
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(4), Constraint::Length(1)])
+            .split(inner);
+        f.render_widget(List::new(rows), chunks[0]);
+        f.render_widget(
+            Paragraph::new(" ↑↓ select · ←→ change · Enter edit folder · Esc back ")
+                .style(Style::default().fg(Color::DarkGray)),
+            chunks[1],
+        );
     }
 
     fn render_help(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -1390,30 +1333,6 @@ impl AppUi {
           update        check for updates now\n\
           quit          exit\n\
         ";
-        f.render_widget(Paragraph::new(text).block(block), popup);
-    }
-
-    fn render_onboarding(&self, f: &mut ratatui::Frame, area: Rect) {
-        let popup = centered_rect(74, 60, area);
-        f.render_widget(Clear, popup);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Welcome to ytcut ")
-            .border_style(Style::default().fg(Color::Green));
-        let text = format!(
-            "\n\
-              Download YouTube songs and play them from your terminal.\n\
-             \n\
-              Where should your music live?\n\
-             \n\
-              > {}_\n\
-             \n\
-              Enter — use this folder (or type a new path first)\n\
-              Esc   — keep the default\n\
-             \n\
-              Later: / for commands (settings, add), ? for help.\n",
-            self.onboarding_input
-        );
         f.render_widget(Paragraph::new(text).block(block), popup);
     }
 
@@ -1476,12 +1395,7 @@ impl Drop for StderrSilencer {
     }
 }
 
-pub fn run(
-    library_dir: PathBuf,
-    tools: Option<Tools>,
-    config: Config,
-    first_run: bool,
-) -> Result<()> {
+pub fn run(library_dir: PathBuf, tools: Option<Tools>, config: Config) -> Result<()> {
     #[cfg(unix)]
     let _silencer = StderrSilencer::new();
 
@@ -1491,7 +1405,7 @@ pub fn run(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = AppUi::new(library_dir, tools, config, first_run);
+    let mut app = AppUi::new(library_dir, tools, config);
     let res = app.run_loop(&mut terminal);
 
     disable_raw_mode()?;
@@ -1516,6 +1430,15 @@ fn is_command(input: &str) -> bool {
             | "exit"
             | "?"
     )
+}
+
+fn volume_bar(volume: f32) -> String {
+    let v = volume.clamp(0.0, 1.0);
+    let filled = (v * 10.0).round() as usize;
+    let bar: String = (0..10)
+        .map(|i| if i < filled { '=' } else { '-' })
+        .collect();
+    format!("[{bar}] {}%", (v * 100.0).round() as i32)
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
