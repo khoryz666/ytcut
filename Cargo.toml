@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
-crossterm = "0.28"
+crossterm = "0.29"
 dirs = "6"
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 lzma-rs = "0.3"
