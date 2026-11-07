@@ -1,0 +1,57 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.actor.login == 'dependabot[bot]')
+    steps:
+      - name: Merge eligible dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Merges only when CI has already passed for the PR's head commit
+          # and GitHub reports it mergeable (no conflicts). Anything else is
+          # left untouched for a human to look at.
+          merge_if_mergeable() {
+            local pr="$1" mergeable
+            for _ in 1 2 3 4 5; do
+              mergeable=$(gh pr view "$pr" --repo "$REPO" --json mergeable -q .mergeable)
+              [ "$mergeable" != "UNKNOWN" ] && break
+              sleep 5
+            done
+            if [ "$mergeable" != "MERGEABLE" ]; then
+              echo "skipping #$pr: not mergeable ($mergeable)"
+              return
+            fi
+            gh pr merge "$pr" --repo "$REPO" --squash || echo "failed to merge #$pr"
+          }
+
+          if [ "${{ github.event_name }}" = 'workflow_run' ]; then
+            for pr in $(gh api "repos/$REPO/actions/runs/${{ github.event.workflow_run.id }}" --jq '.pull_requests[].number'); do
+              merge_if_mergeable "$pr"
+            done
+          else
+            for pr in $(gh pr list --repo "$REPO" --author 'dependabot[bot]' --state open --json number --jq '.[].number'); do
+              if gh pr checks "$pr" --repo "$REPO" >/dev/null 2>&1; then
+                merge_if_mergeable "$pr"
+              else
+                echo "skipping #$pr: checks not passing"
+              fi
+            done
+          fi

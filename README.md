@@ -64,7 +64,7 @@ The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\
 
 Nothing to do. On start, ytcut checks for a new version and installs patch releases silently; for minor/major releases it tells you to run `ytcut update`. yt-dlp updates itself before downloads. Set `YTCUT_DISABLE_AUTOUPDATE=1` (or `autoupdate = "off"` in config.toml) to turn this off.
 
-Every six months [`update-deps.yml`](.github/workflows/update-deps.yml) bumps the Rust dependencies, verifies the build, and tags a patch release. yt-dlp, ffmpeg and Deno are not part of that cycle — they are downloaded as "latest" on first run, and yt-dlp keeps itself current because YouTube breaks old versions.
+Rust dependencies update themselves monthly: [Dependabot](.github/dependabot.yml) opens pull requests for the crates and GitHub Actions, CI verifies them, and passing updates are merged automatically. yt-dlp, ffmpeg and Deno are not part of that — they are downloaded as "latest" on first run, and yt-dlp keeps itself current because YouTube breaks old versions.
 
 ## If YouTube asks you to sign in
 
@@ -109,4 +109,4 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 Set the version in `Cargo.toml` and `flake.nix`, then push a tag with the same version, like `v0.3.0`. [`release.yml`](.github/workflows/release.yml) builds both binaries and publishes them; running copies pick them up on their next start.
 
-Dependency updates are automated: [`update-deps.yml`](.github/workflows/update-deps.yml) runs every six months, updates the crates, checks the build still passes, bumps the patch version, pushes a tag, and triggers the release — no setup required.
+Dependencies update themselves monthly via [Dependabot](.github/dependabot.yml): it opens pull requests for the Rust crates and GitHub Actions, [CI](.github/workflows/ci.yml) checks them, and passing updates are merged automatically. Cutting a release is still manual — bump the version in `Cargo.toml` and `flake.nix`, then push a tag.
