@@ -113,6 +113,7 @@ pub struct AppUi {
     pub status_message: Option<(String, Instant)>,
     pub command_input: String,
     settings: SettingsState,
+    pub last_completed_jobs: usize,
     pub should_quit: bool,
 }
 
@@ -144,6 +145,7 @@ impl AppUi {
             status_message: None,
             command_input: String::new(),
             settings: SettingsState::default(),
+            last_completed_jobs: 0,
             should_quit: false,
         };
         app.refresh_songs();
@@ -194,6 +196,18 @@ impl AppUi {
                 player.tick();
             }
 
+            // Auto-refresh library if any download completed
+            let done_count = {
+                let jobs = self.jobs.lock().unwrap();
+                jobs.iter()
+                    .filter(|j| j.status == Status::Done || j.status == Status::Exists)
+                    .count()
+            };
+            if done_count != self.last_completed_jobs {
+                self.last_completed_jobs = done_count;
+                self.refresh_songs();
+            }
+
             // Clear expired status messages (> 6s)
             if let Some((_, time)) = &self.status_message {
                 if time.elapsed() > Duration::from_secs(6) {
@@ -223,6 +237,15 @@ impl AppUi {
         // Global quit check
         if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
             self.should_quit = true;
+            return;
+        }
+
+        // Manual refresh check
+        if code == KeyCode::F(5)
+            || (code == KeyCode::Char('r') && modifiers.contains(KeyModifiers::CONTROL))
+        {
+            self.refresh_songs();
+            self.set_status("Library refreshed.");
             return;
         }
 

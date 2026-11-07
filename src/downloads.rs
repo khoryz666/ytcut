@@ -158,6 +158,7 @@ pub fn start(
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
     let jobs_clone = Arc::clone(&jobs);
+    let out_dir = out.to_path_buf();
 
     thread::spawn(move || {
         let stdout_reader = BufReader::new(stdout);
@@ -204,7 +205,19 @@ pub fn start(
         let ok = child.wait().map(|s| s.success()).unwrap_or(false);
         let mut jobs = jobs_clone.lock().unwrap();
         if let Some(job) = jobs.get_mut(id) {
-            let existed = before.contains(&job.message);
+            if ok && job.message.is_empty() {
+                if let Ok(dir) = fs::read_dir(&out_dir) {
+                    for entry in dir.flatten() {
+                        if let Ok(fname) = entry.file_name().into_string() {
+                            if !before.contains(&fname) && !fname.starts_with('.') {
+                                job.message = fname;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            let existed = !job.message.is_empty() && before.contains(&job.message);
             job.status = match (ok, existed) {
                 (false, _) => Status::Error,
                 (true, true) => Status::Exists,
