@@ -33,6 +33,8 @@ mod theme {
     pub const BG: Color = Color::Rgb(15, 16, 25);
     /// Panel and popup background.
     pub const SURFACE: Color = Color::Rgb(22, 24, 38);
+    /// Slightly raised surface, e.g. inactive button chips.
+    pub const SURFACE_ALT: Color = Color::Rgb(31, 34, 54);
     /// Inactive panel borders.
     pub const BORDER: Color = Color::Rgb(52, 58, 88);
     /// Primary text.
@@ -1348,20 +1350,62 @@ impl AppUi {
             return;
         }
 
-        let items: Vec<ListItem> = self
-            .filtered_indices
-            .iter()
-            .enumerate()
-            .map(|(display_idx, &song_idx)| {
-                let song = &self.songs[song_idx];
-                let selected = display_idx == self.lib_selected && focused;
-                song_row(selected, &song.name, area.width)
-            })
-            .collect();
+        let name_max = area.width.saturating_sub(8) as usize;
+        let mut items: Vec<ListItem> = Vec::with_capacity(self.filtered_indices.len() * 2);
+        let mut starts: Vec<usize> = Vec::with_capacity(self.filtered_indices.len());
+        let mut heights: Vec<usize> = Vec::with_capacity(self.filtered_indices.len());
 
-        let list = List::new(with_gaps(items)).block(block);
+        for (display_idx, &song_idx) in self.filtered_indices.iter().enumerate() {
+            let song = &self.songs[song_idx];
+            let selected = display_idx == self.lib_selected && focused;
+
+            starts.push(items.len());
+            let wrapped = wrap_word(&song.name, name_max);
+            heights.push(wrapped.len());
+
+            let marker = if selected { "▶ " } else { "  " };
+            let text_style = if selected {
+                Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::FG)
+            };
+            let item_style = if selected {
+                Style::default().bg(theme::ACCENT)
+            } else {
+                Style::default()
+            };
+
+            for (i, line) in wrapped.iter().enumerate() {
+                let prefix = if i == 0 {
+                    format!("  {marker}")
+                } else {
+                    "    ".to_string()
+                };
+                items.push(
+                    ListItem::new(Line::from(vec![
+                        Span::styled(prefix, text_style),
+                        Span::styled(line.clone(), text_style),
+                    ]))
+                    .style(item_style),
+                );
+            }
+            items.push(ListItem::new(""));
+        }
+
+        let list = List::new(items).block(block);
         let mut state = ListState::default();
-        *state.offset_mut() = spaced_offset(self.lib_selected, area.height);
+        if let (Some(&start), Some(&height)) = (
+            starts.get(self.lib_selected),
+            heights.get(self.lib_selected),
+        ) {
+            let visible = area.height.saturating_sub(2) as usize;
+            let offset = if height >= visible {
+                start
+            } else {
+                start.saturating_sub(visible.saturating_sub(height))
+            };
+            *state.offset_mut() = offset;
+        }
         f.render_stateful_widget(list, area, &mut state);
     }
 
@@ -1406,7 +1450,7 @@ impl AppUi {
 
                 let marker = if is_current { "▶ " } else { "  " };
                 let num = format!("{:>2} ", idx + 1);
-                let name = truncate_str(&name, area.width.saturating_sub(8) as usize);
+                let name = crop_word(&name, area.width.saturating_sub(8) as usize);
 
                 let text_style = if is_selected {
                     Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
@@ -1462,14 +1506,16 @@ impl AppUi {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(3),      // play/pause
+                Constraint::Length(3),      // play button
                 Constraint::Length(1),      // gap
-                Constraint::Percentage(26), // title
-                Constraint::Min(8),         // progress bar
+                Constraint::Percentage(24), // title
+                Constraint::Min(6),         // progress bar
                 Constraint::Length(1),      // gap
                 Constraint::Length(13),     // time
                 Constraint::Length(1),      // gap
-                Constraint::Length(5),      // shuffle / repeat
+                Constraint::Length(3),      // shuffle button
+                Constraint::Length(1),      // gap
+                Constraint::Length(3),      // repeat button
             ])
             .split(inner);
 
@@ -1481,11 +1527,13 @@ impl AppUi {
             "■"
         };
         f.render_widget(
-            Paragraph::new(icon).style(
+            Paragraph::new(Line::from(vec![Span::styled(
+                format!(" {icon} "),
                 Style::default()
-                    .fg(theme::ACCENT)
+                    .fg(theme::BG)
+                    .bg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD),
-            ),
+            )])),
             chunks[0],
         );
 
@@ -1516,28 +1564,13 @@ impl AppUi {
             chunks[5],
         );
 
-        let shf_style = if player.shuffle {
-            Style::default()
-                .fg(theme::GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme::MUTED)
-        };
-        let rep_style = if player.repeat_one {
-            Style::default()
-                .fg(theme::GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme::MUTED)
-        };
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("⇆", shf_style),
-                Span::raw(" "),
-                Span::styled("↻", rep_style),
-            ]))
-            .alignment(Alignment::Right),
+            Paragraph::new(Line::from(vec![toggle_button("⇆", player.shuffle)])),
             chunks[7],
+        );
+        f.render_widget(
+            Paragraph::new(Line::from(vec![toggle_button("↻", player.repeat_one)])),
+            chunks[9],
         );
     }
 
@@ -1784,7 +1817,7 @@ impl AppUi {
     }
 
     fn render_help(&self, f: &mut ratatui::Frame, area: Rect) {
-        let popup = centered_rect(72, 85, area);
+        let popup = centered_rect(76, 90, area);
         f.render_widget(Clear, popup);
         let block = Block::default()
             .borders(Borders::ALL)
@@ -1797,36 +1830,43 @@ impl AppUi {
             )
             .border_style(Style::default().fg(theme::ACCENT))
             .style(Style::default().bg(theme::SURFACE));
-        let text = "\n\
-        Navigation\n\
-        \n\
-          Tab           switch pane / field\n\
-          d             delete song\n\
-          /             command palette\n\
-          ?             this help\n\
-        \n\
-        Playback\n\
-        \n\
-          space         play / pause\n\
-          n / p         next / previous\n\
-          s             toggle shuffle\n\
-          r             toggle repeat one\n\
-          o             open YouTube in browser (sign in)\n\
-        \n\
-        Commands (/)\n\
-        \n\
-          /add [<args>] download dialog or URL (/add <url> [--name <name>] [--start <s>] [--end <e>])\n\
-          /background   play current track and queue in background (persists on exit)\n\
-          /stop         stop background playback and pause player\n\
-          /search [<q>] filter library songs by name (empty to clear filter)\n\
-          /refresh      reload music library from disk\n\
-          /settings     open settings (folder, browser, auto-update, volume)\n\
-          /dir <path>   switch or create library folder\n\
-          /update       update yt-dlp and ytcut to the latest version\n\
-          /help         show this help documentation\n\
-          /quit         exit application\n\
-        ";
-        f.render_widget(Paragraph::new(text).block(block), popup);
+
+        let lines = vec![
+            Line::from(""),
+            help_header("Navigation"),
+            Line::from(""),
+            help_row("Tab", "switch pane / field"),
+            help_row("j / ↓", "move down"),
+            help_row("k / ↑", "move up"),
+            help_row("Enter", "play selection"),
+            help_row("d", "delete song"),
+            help_row("/", "command palette"),
+            help_row("?", "this help"),
+            Line::from(""),
+            help_header("Playback"),
+            Line::from(""),
+            help_row("space", "play / pause"),
+            help_row("n", "next track"),
+            help_row("p", "previous track"),
+            help_row("s", "toggle shuffle"),
+            help_row("r", "toggle repeat one"),
+            help_row("o", "open YouTube (sign in)"),
+            Line::from(""),
+            help_header("Commands"),
+            Line::from(""),
+            help_row("/add", "download a song"),
+            help_row("/background", "play in background (/bg)"),
+            help_row("/stop", "stop background audio"),
+            help_row("/search", "filter the library"),
+            help_row("/refresh", "reload the library"),
+            help_row("/settings", "open settings"),
+            help_row("/dir", "change library folder"),
+            help_row("/update", "update ytcut"),
+            help_row("/quit", "exit"),
+            Line::from(""),
+        ];
+
+        f.render_widget(List::new(lines).block(block), popup);
     }
 
     fn render_prompt(&self, f: &mut ratatui::Frame, prompt: &PromptType, area: Rect) {
@@ -2019,27 +2059,50 @@ fn field_value(value: &str, placeholder: &str, focused: bool) -> Span<'static> {
     }
 }
 
-/// A library row: a marker and the song name, with a little breathing room.
-fn song_row(selected: bool, name: &str, width: u16) -> ListItem<'static> {
-    let marker = if selected { "▶ " } else { "  " };
-    let name_trunc = truncate_str(name, width.saturating_sub(6) as usize);
+/// Wrap text into lines no wider than `max` characters, breaking at word
+/// boundaries (and hard-breaking any single word longer than the limit).
+fn wrap_word(text: &str, max: usize) -> Vec<String> {
+    let max = max.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
 
-    let text_style = if selected {
-        Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme::FG)
-    };
-    let item_style = if selected {
-        Style::default().bg(theme::ACCENT)
-    } else {
-        Style::default()
-    };
+    for word in text.split_whitespace() {
+        if !current.is_empty() && current.chars().count() + 1 + word.chars().count() > max {
+            lines.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        for ch in word.chars() {
+            if current.chars().count() >= max {
+                lines.push(std::mem::take(&mut current));
+            }
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
 
-    ListItem::new(Line::from(vec![Span::styled(
-        format!("  {marker}{name_trunc}"),
-        text_style,
-    )]))
-    .style(item_style)
+/// Truncate to fit `max` characters, cutting at a word boundary with an ellipsis.
+fn crop_word(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    if max <= 1 {
+        return "…".to_string();
+    }
+    let mut truncated: String = text.chars().take(max - 1).collect();
+    if let Some(space) = truncated.rfind(' ') {
+        truncated.truncate(space);
+    }
+    truncated.push('…');
+    truncated
 }
 
 /// Insert a blank line after each item so rows are taller and easier to scan.
@@ -2050,6 +2113,42 @@ fn with_gaps(items: Vec<ListItem<'static>>) -> Vec<ListItem<'static>> {
         out.push(ListItem::new(""));
     }
     out
+}
+
+/// A bold, accent-colored section heading for the help page.
+fn help_header(title: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        title.to_string(),
+        Style::default()
+            .fg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+/// A help row: a bold accent key column followed by its description.
+fn help_row(key: &str, desc: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("  {:<14}", key),
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(desc.to_string(), Style::default().fg(theme::FG)),
+    ])
+}
+
+/// A padded "button" chip for the player bar, lit green when active.
+fn toggle_button(symbol: &str, on: bool) -> Span<'static> {
+    let style = if on {
+        Style::default()
+            .fg(theme::BG)
+            .bg(theme::GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme::MUTED).bg(theme::SURFACE_ALT)
+    };
+    Span::styled(format!(" {symbol} "), style)
 }
 
 /// Scroll offset for a gap-spaced list (two buffer rows per song).
@@ -2148,5 +2247,28 @@ mod tests {
         assert_eq!(matching_commands("/stop")[0].cmd, "/stop");
         assert_eq!(matching_commands("/search")[0].cmd, "/search");
         assert_eq!(matching_commands("/refresh")[0].cmd, "/refresh");
+    }
+
+    #[test]
+    fn wrap_word_wraps_at_boundaries_and_breaks_long_words() {
+        assert_eq!(wrap_word("hello world", 20), vec!["hello world"]);
+        assert_eq!(wrap_word("hello world", 8), vec!["hello", "world"]);
+        assert_eq!(
+            wrap_word("a very long title here", 10),
+            vec!["a very", "long title", "here"]
+        );
+        assert_eq!(
+            wrap_word("supercalifragilistic", 5),
+            vec!["super", "calif", "ragil", "istic"]
+        );
+        assert_eq!(wrap_word("", 10), vec![""]);
+    }
+
+    #[test]
+    fn crop_word_cuts_at_word_boundary() {
+        assert_eq!(crop_word("short", 10), "short");
+        assert_eq!(crop_word("hello wonderful world", 12), "hello…");
+        assert_eq!(crop_word("abcdefghij", 5), "abcd…");
+        assert_eq!(crop_word("oneword", 1), "…");
     }
 }
