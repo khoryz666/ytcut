@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # update.yml starts this after it pushes
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      # Builds the Svelte page, embeds it in the Rust binary, and runs the
+      # Rust tests. An update that no longer compiles never reaches main.
+      - run: nix build -L
