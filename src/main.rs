@@ -10,6 +10,7 @@ mod app;
 mod browser;
 mod downloads;
 mod library;
+mod shortcut;
 mod tools;
 
 use std::fs::{self, File};
@@ -67,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(keep_current(app.clone()));
     if !args.no_window {
+        shortcut::ensure();
         browser::open(browser.as_ref(), &url);
         tokio::spawn(exit_when_idle(app.clone()));
     }
