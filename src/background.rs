@@ -28,16 +28,18 @@ pub fn is_running() -> bool {
     if !pfile.exists() {
         return false;
     }
-    let Ok(pid_str) = fs::read_to_string(&pfile) else {
-        return false;
-    };
-    let Ok(pid) = pid_str.trim().parse::<i32>() else {
-        return false;
-    };
+
     #[cfg(unix)]
-    unsafe {
-        libc::kill(pid, 0) == 0
+    {
+        let Ok(pid_str) = fs::read_to_string(&pfile) else {
+            return false;
+        };
+        let Ok(pid) = pid_str.trim().parse::<i32>() else {
+            return false;
+        };
+        unsafe { libc::kill(pid, 0) == 0 }
     }
+
     #[cfg(not(unix))]
     true
 }
