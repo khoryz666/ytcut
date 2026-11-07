@@ -11,11 +11,29 @@ Download the file for your system from the [latest release](https://github.com/k
 - **Linux (x86-64):** `ytcut-x86_64-unknown-linux-musl.tar.gz`
 - **Windows (x86-64):** `ytcut-x86_64-pc-windows-msvc.zip`
 
+Or from a terminal:
+
+```sh
+# Linux
+cd ~/Music
+curl -LO https://github.com/khoryz666/ytcut/releases/latest/download/ytcut-x86_64-unknown-linux-musl.tar.gz
+tar -xzf ytcut-x86_64-unknown-linux-musl.tar.gz
+./ytcut
+```
+
+```powershell
+# Windows (PowerShell)
+cd ~\Music
+curl.exe -LO https://github.com/khoryz666/ytcut/releases/latest/download/ytcut-x86_64-pc-windows-msvc.zip
+tar -xf ytcut-x86_64-pc-windows-msvc.zip
+.\ytcut.exe
+```
+
 The first run needs internet. It downloads yt-dlp, ffmpeg and Deno, about 200 MB on Linux, and can take a few minutes. They are checked against the checksums their projects publish, and kept in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows).
 
 These tools are glibc binaries. Alpine (musl) can't run them. On NixOS, set `programs.nix-ld.enable = true;` in your configuration so the dynamic linker is available.
 
-On the first run ytcut adds a shortcut to start it: the app menu on Linux, the desktop and Start menu on Windows. It points at the binary you ran, so it keeps working as ytcut updates itself.
+On the first run ytcut adds a shortcut to start it: the app menu and desktop on Linux, the desktop and Start menu on Windows. It points at the binary you ran, so it keeps working as ytcut updates itself.
 
 ## Updates
 
@@ -57,7 +75,7 @@ This needs a Chromium-based browser: Chrome, Chromium, Brave, Edge or Vivaldi. W
 
 ytcut writes only three things: the app itself, its tools, and a shortcut. To remove it all:
 
-- **Linux:** delete `~/.local/share/applications/ytcut.desktop`, `~/.local/share/ytcut/`, and the `ytcut` binary.
+- **Linux:** delete `~/.local/share/applications/ytcut.desktop`, `~/Desktop/ytcut.desktop`, `~/.local/share/ytcut/`, and the `ytcut` binary.
 - **Windows:** delete `ytcut.lnk` from your Desktop and Start menu, delete `%LOCALAPPDATA%\ytcut\`, and delete `ytcut.exe`.
 
 Nothing else is left behind.
