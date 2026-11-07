@@ -10,7 +10,7 @@ This works on any Linux desktop: GNOME, KDE Plasma, Cinnamon, XFCE, MATE and oth
 
 ### 1. Install Nix
 
-Nix gives ytcut everything it needs: yt-dlp, ffmpeg, Rust and TypeScript. Nothing else is installed on your system.
+Nix gives ytcut everything it needs: yt-dlp, ffmpeg, Rust, Node and the web build tools. Nothing else is installed on your system.
 
 Skip this step if `nix --version` already works.
 
@@ -136,26 +136,31 @@ direnv allow    # or: nix develop
 cargo run -- ~/Music
 ```
 
+`cargo run` builds the Svelte page first. For a faster page loop, run the API and Vite together:
+
+```sh
+nix develop
+cargo run -- ~/Music            # terminal 1
+npm --prefix src/web run dev    # terminal 2, then open http://localhost:5173
+```
+
 | Path | What it holds |
 |---|---|
 | `src/main.rs` | Startup, single-instance lock, idle shutdown |
 | `src/app.rs` | Shared state, and the check that only ytcut's own page may call the server |
-| `src/routes.rs` | Which handler answers which URL |
-| `src/http.rs` | Reading requests and sending replies, including video seeking |
+| `src/api.rs` | Axum routes, the embedded page, and video streaming |
 | `src/library.rs` | The music folder: list, rename, delete, safe file names |
 | `src/downloads.rs` | yt-dlp: look up, download, progress |
-| `src/json.rs` | JSON output |
-| `#[cfg(test)] mod tests` | Unit tests, at the bottom of `http.rs`, `library.rs`, `downloads.rs` and `json.rs` |
-| `src/web/` | The page: HTML, CSS, logo |
-| `src/web/ts/` | The page's TypeScript, one module per part of the page |
-| `build.rs` | Compiles the TypeScript into the binary |
+| `build.rs` | Builds the page locally, or embeds the build Nix prepared |
+| `src/web/` | Svelte 5 page, Pico CSS, and the Vite config |
 
-The server uses only the Rust standard library. The TypeScript has no packages.
+The backend uses axum, tokio, serde and tower-http. The page uses Svelte 5, Vite and Pico CSS.
 
 Checks before a commit:
 
 ```sh
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+npm --prefix src/web run check
 ```
 
 After changing the code, close the ytcut window and wait a few seconds. The next launch uses the new version.
@@ -163,3 +168,7 @@ After changing the code, close the ytcut window and wait a few seconds. The next
 Run `git add` on new files first. Nix only sees files that git tracks.
 
 Video and audio files are ignored by git.
+
+## Updates
+
+[`.github/workflows/update.yml`](.github/workflows/update.yml) runs every Monday. It updates `flake.lock`, `Cargo.lock` and `package-lock.json`, then pushes only if `nix build` still succeeds. Dependabot keeps the GitHub Actions themselves current and merges those PRs once CI passes.
