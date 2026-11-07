@@ -1,19 +1,42 @@
-//! Compile the page's TypeScript into OUT_DIR/js, which src/routes.rs embeds.
+//! Build the Svelte page, or use the build Nix already prepared.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
-    println!("cargo::rerun-if-changed=src/web/ts");
-    println!("cargo::rerun-if-changed=src/web/tsconfig.json");
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("js");
-    let status = Command::new("tsc")
-        .args(["--project", "src/web/tsconfig.json", "--outDir"])
-        .arg(&out)
-        .status()
-        .unwrap_or_else(|e| {
-            panic!("could not run tsc (TypeScript); run inside `nix develop`: {e}")
-        });
-    assert!(status.success(), "TypeScript failed to compile");
+    println!("cargo:rerun-if-changed=src/web/src");
+    println!("cargo:rerun-if-changed=src/web/index.html");
+    println!("cargo:rerun-if-changed=src/web/package.json");
+    println!("cargo:rerun-if-changed=src/web/vite.config.ts");
+
+    let dist = match env::var_os("YTCUT_WEB_DIST") {
+        Some(dir) => PathBuf::from(dir),
+        None => build_web(),
+    };
+    assert!(
+        dist.join("index.html").is_file(),
+        "the web build is missing: {}",
+        dist.display()
+    );
+    println!("cargo:rustc-env=YTCUT_WEB_DIST={}", dist.display());
+}
+
+/// Build the page locally. Nix sets YTCUT_WEB_DIST, so this only runs in a dev checkout.
+fn build_web() -> PathBuf {
+    let web = Path::new("src/web");
+    if !web.join("node_modules").is_dir() {
+        run(Command::new("npm").args(["ci", "--prefix"]).arg(web));
+    }
+    run(Command::new("npm")
+        .args(["run", "build", "--prefix"])
+        .arg(web));
+    web.join("dist")
+}
+
+fn run(command: &mut Command) {
+    let status = command.status().unwrap_or_else(|e| {
+        panic!("could not run npm; enter `nix develop` first: {e}");
+    });
+    assert!(status.success(), "the web build failed");
 }

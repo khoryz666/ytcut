@@ -32,5 +32,10 @@ result
 result-*
 .direnv/
 
+# web build
+src/web/node_modules/
+src/web/dist/
+src/web/.vite/
+
 # rust
 target/

@@ -5,57 +5,60 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::json;
+use serde::Serialize;
 
 /// Leaves room for an extension and yt-dlp's temporary suffixes within 255 bytes.
 pub const MAX_NAME_BYTES: usize = 200;
 
-const VIDEO_TYPES: [(&str, &str); 5] = [
-    ("mp4", "video/mp4"),
-    ("m4v", "video/mp4"),
-    ("webm", "video/webm"),
-    ("mkv", "video/x-matroska"),
-    ("mov", "video/quicktime"),
-];
+const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "mkv", "mov"];
 
-/// The video MIME type of a path, or None if it is not a video.
-pub fn mime(path: &Path) -> Option<&'static str> {
-    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    VIDEO_TYPES.iter().find(|(e, _)| *e == ext).map(|(_, m)| *m)
+#[derive(Serialize)]
+pub struct VideoFile {
+    pub name: String,
+    pub size: u64,
 }
 
 /// A video file directly inside the folder.
 pub fn find(out: &Path, name: &str) -> Result<PathBuf, String> {
     let path = out.join(name);
-    if name.contains('/') || name.starts_with('.') || !path.is_file() || mime(&path).is_none() {
+    let video = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)));
+    if name.contains('/') || name.starts_with('.') || !path.is_file() || !video {
         return Err(format!("{name} not found."));
     }
     Ok(path)
 }
 
-/// The folder's videos as JSON, newest first.
-pub fn list_json(out: &Path) -> io::Result<String> {
-    let mut files: Vec<(u64, String, u64)> = fs::read_dir(out)?
+/// The folder's videos, newest first.
+pub fn list(out: &Path) -> io::Result<Vec<VideoFile>> {
+    let mut files: Vec<(u64, VideoFile)> = fs::read_dir(out)?
         .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let meta = e.metadata().ok()?;
-            if !meta.is_file() || name.starts_with('.') || mime(&e.path()).is_none() {
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            if name.starts_with('.') {
                 return None;
             }
+            find(out, &name).ok()?;
+            let meta = entry.metadata().ok()?;
             let modified = meta
                 .modified()
                 .ok()?
                 .duration_since(UNIX_EPOCH)
                 .ok()?
                 .as_secs();
-            Some((modified, name, meta.len()))
+            Some((
+                modified,
+                VideoFile {
+                    name,
+                    size: meta.len(),
+                },
+            ))
         })
         .collect();
-    files.sort_by_key(|f| std::cmp::Reverse(f.0));
-    Ok(json::array(files.iter().map(|(_, name, size)| {
-        json::object(&[("name", json::string(name)), ("size", size.to_string())])
-    })))
+    files.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    Ok(files.into_iter().map(|(_, file)| file).collect())
 }
 
 /// Rename a video, keeping its extension. Returns the new file name.
@@ -94,7 +97,7 @@ pub fn clean_name(name: &str) -> String {
         .collect();
     let name = name.trim();
     let name = match name.rsplit_once('.') {
-        Some((base, ext)) if VIDEO_TYPES.iter().any(|(e, _)| ext.eq_ignore_ascii_case(e)) => base,
+        Some((base, ext)) if VIDEO_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)) => base,
         _ => name,
     };
     let name = name.trim().trim_matches('.');

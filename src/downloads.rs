@@ -2,17 +2,19 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
-use std::thread;
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::process::{Child, Command};
 
 use crate::app::App;
-use crate::json;
 use crate::library::{clean_name, MAX_NAME_BYTES};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Running,
     Done,
@@ -21,13 +23,14 @@ pub enum Status {
     Error,
 }
 
+#[derive(Clone, Serialize)]
 pub struct Job {
     /// The chosen file name, or the link when the video title is used.
-    label: String,
-    status: Status,
-    progress: f64,
+    pub label: String,
+    pub status: Status,
+    pub progress: f64,
     /// The saved file name, or the error.
-    message: String,
+    pub message: String,
 }
 
 impl Job {
@@ -36,8 +39,28 @@ impl Job {
     }
 }
 
-/// Title, duration and thumbnail URL as JSON, for the download form preview.
-pub fn info(app: &App, url: &str) -> Result<String, String> {
+#[derive(Serialize)]
+pub struct VideoInfo {
+    pub title: String,
+    pub duration: Option<f64>,
+    pub thumbnail: Option<String>,
+}
+
+/// The download form: only `url` is required.
+#[derive(Deserialize)]
+pub struct StartForm {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub start: String,
+    #[serde(default)]
+    pub end: String,
+}
+
+/// Title, duration and thumbnail URL, for the download form preview.
+pub async fn info(app: &App, url: &str) -> Result<VideoInfo, String> {
     check_url(url)?;
     let out = yt_dlp(app)
         .args([
@@ -51,28 +74,20 @@ pub fn info(app: &App, url: &str) -> Result<String, String> {
             url,
         ])
         .output()
+        .await
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
-    match (
-        out.status.success(),
-        lines.next(),
-        lines.next(),
-        lines.next(),
-    ) {
-        (true, Some(duration), Some(title), thumbnail) => Ok(json::object(&[
-            ("title", json::string(title)),
-            (
-                "duration",
-                finite(duration).map_or("null".into(), |d| d.to_string()),
-            ),
-            (
-                "thumbnail",
-                thumbnail
-                    .filter(|t| t.starts_with("https://"))
-                    .map_or("null".into(), json::string),
-            ),
-        ])),
+    let duration = lines.next().and_then(finite);
+    match (out.status.success(), lines.next()) {
+        (true, Some(title)) => Ok(VideoInfo {
+            title: title.to_string(),
+            duration,
+            thumbnail: lines
+                .next()
+                .filter(|t| t.starts_with("https://"))
+                .map(String::from),
+        }),
         _ => Err(String::from_utf8_lossy(&out.stderr)
             .lines()
             .rfind(|l| l.starts_with("ERROR"))
@@ -83,10 +98,10 @@ pub fn info(app: &App, url: &str) -> Result<String, String> {
     }
 }
 
-/// Validate the request, then download in the background. `start` and `end` may be empty.
-pub fn start(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> Result<(), String> {
-    check_url(url)?;
-    let name = clean_name(name);
+/// Validate the request, then download in the background.
+pub async fn start(app: &App, form: StartForm) -> Result<(), String> {
+    check_url(&form.url)?;
+    let name = clean_name(&form.name);
     let taken = app.out.join(format!("{name}.mp4")).exists()
         || app
             .jobs
@@ -97,7 +112,7 @@ pub fn start(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> R
     if !name.is_empty() && taken {
         return Err(format!("{name}.mp4 already exists. Pick another name."));
     }
-    if let (Some(s), Some(e)) = (seconds(start)?, seconds(end)?) {
+    if let (Some(s), Some(e)) = (seconds(&form.start)?, seconds(&form.end)?) {
         if e <= s {
             return Err("End must be after start.".into());
         }
@@ -111,31 +126,14 @@ pub fn start(app: &Arc<App>, url: &str, name: &str, start: &str, end: &str) -> R
                 .collect()
         })
         .unwrap_or_default();
-    let child = download_command(app, &name, start, end)
-        .arg(url)
+    let child = download_command(app, &name, &form.start, &form.end)
+        .arg(&form.url)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Could not run yt-dlp: {e}"))?;
-    track(app, child, or(&name, url).to_string(), before);
+    track(app, child, or(&name, &form.url).to_string(), before);
     Ok(())
-}
-
-pub fn jobs_json(jobs: &[Job]) -> String {
-    json::array(jobs.iter().rev().map(|j| {
-        let status = match j.status {
-            Status::Running => "running",
-            Status::Done => "done",
-            Status::Exists => "exists",
-            Status::Error => "error",
-        };
-        json::object(&[
-            ("label", json::string(&j.label)),
-            ("status", json::string(status)),
-            ("progress", j.progress.to_string()),
-            ("message", json::string(&j.message)),
-        ])
-    }))
 }
 
 /// yt-dlp for a single video, signed in with the browser profile's cookies once it exists.
@@ -188,7 +186,7 @@ fn download_command(app: &App, name: &str, start: &str, end: &str) -> Command {
 
 /// Add a job for the running download and update it until yt-dlp exits.
 /// `before` holds the folder's file names from before the download.
-fn track(app: &Arc<App>, mut child: Child, label: String, before: HashSet<String>) {
+fn track(app: &App, mut child: Child, label: String, before: HashSet<String>) {
     let id = {
         let mut jobs = app.jobs.lock().unwrap();
         jobs.push(Job {
@@ -199,16 +197,19 @@ fn track(app: &Arc<App>, mut child: Child, label: String, before: HashSet<String
         });
         jobs.len() - 1
     };
-    let readers = [
-        watch(child.stdout.take().unwrap(), app.clone(), id),
-        watch(child.stderr.take().unwrap(), app.clone(), id),
-    ];
-    let app = app.clone();
-    thread::spawn(move || {
-        readers.into_iter().for_each(|r| drop(r.join()));
-        let ok = child.wait().is_ok_and(|s| s.success());
-        let job = &mut app.jobs.lock().unwrap()[id];
-        job.status = match (ok, before.contains(&job.message)) {
+    let jobs = app.jobs.clone();
+    tokio::spawn(async move {
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let ((), ()) = tokio::join!(
+            watch(stdout, jobs.clone(), id),
+            watch(stderr, jobs.clone(), id),
+        );
+        let ok = child.wait().await.is_ok_and(|s| s.success());
+        let mut jobs = jobs.lock().unwrap();
+        let job = &mut jobs[id];
+        let existed = before.contains(&job.message);
+        job.status = match (ok, existed) {
             (false, _) => Status::Error,
             (true, true) => Status::Exists,
             (true, false) => Status::Done,
@@ -220,25 +221,33 @@ fn track(app: &Arc<App>, mut child: Child, label: String, before: HashSet<String
 }
 
 /// Feed yt-dlp output lines into the job: progress, final file path, or last error.
-fn watch(stream: impl Read + Send + 'static, app: Arc<App>, id: usize) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        // Read bytes, not lines: a non-UTF-8 line must not stop us draining the pipe.
-        for line in BufReader::new(stream).split(b'\n').map_while(Result::ok) {
-            let line = String::from_utf8_lossy(&line).into_owned();
-            let job = &mut app.jobs.lock().unwrap()[id];
-            if let Some(p) = line.strip_prefix("PROGRESS ") {
-                job.progress = finite(p.trim().trim_end_matches('%')).unwrap_or(job.progress);
-            } else if line.starts_with('/') {
-                job.message = Path::new(&line)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into();
-            } else if line.starts_with("ERROR") {
-                job.message = yt_error(&line);
-            }
+async fn watch(stream: impl AsyncRead + Unpin, jobs: Arc<Mutex<Vec<Job>>>, id: usize) {
+    let mut reader = BufReader::new(stream);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_until(b'\n', &mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
         }
-    })
+        let line = String::from_utf8_lossy(&buf);
+        let line = line.trim();
+        let mut jobs = jobs.lock().unwrap();
+        let Some(job) = jobs.get_mut(id) else {
+            continue;
+        };
+        if let Some(p) = line.strip_prefix("PROGRESS ") {
+            job.progress = finite(p.trim().trim_end_matches('%')).unwrap_or(job.progress);
+        } else if line.starts_with('/') {
+            job.message = Path::new(line)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into();
+        } else if line.starts_with("ERROR") {
+            job.message = yt_error(line);
+        }
+    }
 }
 
 /// "ERROR: [youtube] id: Sign in to confirm. Use --cookies ..." -> "Sign in to confirm."

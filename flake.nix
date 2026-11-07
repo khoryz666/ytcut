@@ -11,13 +11,36 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
+        # The Svelte page, built by npm and embedded into the Rust binary.
+        # importNpmLock avoids a hand-maintained npmDepsHash: it fetches exactly
+        # the packages named in package-lock.json.
+        web = pkgs.stdenv.mkDerivation {
+          pname = "ytcut-web";
+          version = "0.1.0";
+          src = ./src/web;
+          nativeBuildInputs = [ pkgs.nodejs pkgs.importNpmLock.hooks.npmConfigHook ];
+          npmDeps = pkgs.importNpmLock { npmRoot = ./src/web; };
+          buildPhase = ''
+            runHook preBuild
+            npm run build
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out
+            cp -r dist/. $out/
+            runHook postInstall
+          '';
+        };
+
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "ytcut";
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          # build.rs compiles the page's TypeScript.
-          nativeBuildInputs = [ pkgs.makeWrapper pkgs.typescript ];
+          # build.rs embeds this instead of running npm inside the sandbox.
+          env.YTCUT_WEB_DIST = "${web}";
+          nativeBuildInputs = [ pkgs.makeWrapper ];
           postInstall = ''
             wrapProgram $out/bin/ytcut --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDeps pkgs)}
           '';
@@ -98,7 +121,7 @@
             Name=ytcut
             Comment=Download YouTube songs and play them on repeat
             Exec="$nix" --extra-experimental-features "nix-command flakes" run "$repo#open"
-            Icon=$repo/src/web/logo.svg
+            Icon=$repo/src/web/public/logo.svg
             Terminal=false
             StartupWMClass=ytcut
             EOF
@@ -127,8 +150,15 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = runtimeDeps pkgs ++ [
-            pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.rust-analyzer pkgs.typescript
+            pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.rust-analyzer
+            pkgs.nodejs
           ];
+          # npm packages are locked in src/web/package-lock.json.
+          shellHook = ''
+            if [ ! -d src/web/node_modules ]; then
+              (cd src/web && npm ci)
+            fi
+          '';
         };
       });
     };
