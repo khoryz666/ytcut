@@ -21,7 +21,7 @@ cargo install --git https://github.com/khoryz666/ytcut
 nix run github:khoryz666/ytcut
 ```
 
-The first run needs internet. It downloads yt-dlp, ffmpeg and Deno (about 200 MB on Linux), checks them against the checksums their projects publish, and keeps them in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows). These are glibc binaries, so Alpine (musl) can't run them; on NixOS set `programs.nix-ld.enable = true;`.
+The first run needs internet. It downloads yt-dlp (about 200 MB on Linux) — and ffmpeg and Deno only if you don't already have them — checks them against the checksums their projects publish, and keeps them in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows). These are glibc binaries, so Alpine (musl) can't run them; on NixOS set `programs.nix-ld.enable = true;`.
 
 Linux needs ALSA (`libasound2`) and PulseAudio/PipeWire installed — both are present on nearly every desktop. On Windows, sound uses the system output (WASAPI) automatically; the interface looks best in Windows Terminal.
 
@@ -64,7 +64,7 @@ The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\
 
 Nothing to do. On start, ytcut checks for a new version and installs patch releases silently; for minor/major releases it tells you to run `ytcut update`. yt-dlp updates itself before downloads. Set `YTCUT_DISABLE_AUTOUPDATE=1` (or `autoupdate = "off"` in config.toml) to turn this off.
 
-Rust dependencies update themselves monthly: [Dependabot](.github/dependabot.yml) opens pull requests for the crates and GitHub Actions, CI verifies them, and passing updates are merged automatically. The pinned Nix toolchain is refreshed the same way by [`flake-update.yml`](.github/workflows/flake-update.yml). yt-dlp, ffmpeg and Deno are not part of that — they are downloaded as "latest" on first run, and yt-dlp keeps itself current because YouTube breaks old versions.
+Rust dependencies update themselves monthly: [Dependabot](.github/dependabot.yml) opens pull requests for the crates and GitHub Actions, CI verifies them, and passing updates are merged automatically. The pinned Nix toolchain is refreshed the same way by [`flake-update.yml`](.github/workflows/flake-update.yml). ffmpeg and Deno are not part of that — ytcut uses the copies already on your system, and any it downloads are refreshed every six months. yt-dlp keeps itself current because YouTube breaks old versions.
 
 ## If YouTube asks you to sign in
 

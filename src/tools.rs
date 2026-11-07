@@ -1,17 +1,23 @@
-//! yt-dlp, ffmpeg and deno: downloaded from their own releases on first use and checked
-//! against the checksums published there. After that yt-dlp keeps itself current, which
-//! matters because YouTube keeps breaking old versions.
+//! yt-dlp, ffmpeg and deno: downloaded from their own releases when missing and
+//! checked against the checksums published there. yt-dlp keeps itself current
+//! after that, which matters because YouTube keeps breaking old versions.
+//! ffmpeg and deno prefer a copy the user already has on PATH; a downloaded copy
+//! is refreshed every six months.
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 
 #[cfg(not(all(target_arch = "x86_64", any(target_os = "linux", windows))))]
 compile_error!("ytcut only knows the tool downloads for x86-64 Linux and Windows");
+
+/// A downloaded ffmpeg or deno older than this is replaced with the latest release.
+const TOOL_MAX_AGE: Duration = Duration::from_secs(180 * 24 * 60 * 60); // six months
 
 /// A release file: its URL, the URL of its checksums, and where the program is inside it.
 struct Asset {
@@ -76,25 +82,26 @@ pub fn prepare(dir: &Path) -> Result<Tools> {
         deno: path("deno"),
     };
     let [yt_dlp, ffmpeg, deno] = &ASSETS;
-    let _ = install(yt_dlp, &tools.yt_dlp);
-    let _ = install(ffmpeg, &tools.ffmpeg);
-    let _ = install(deno, &tools.deno);
 
-    // Fall back to system PATH if missing in dir
+    // yt-dlp: download if missing (it self-updates afterwards), else use PATH.
+    let _ = install(yt_dlp, &tools.yt_dlp, None);
     if !tools.yt_dlp.is_file() {
         if let Some(p) = find_in_path("yt-dlp") {
             tools.yt_dlp = p;
         }
     }
-    if !tools.ffmpeg.is_file() {
-        if let Some(p) = find_in_path("ffmpeg") {
-            tools.ffmpeg = p;
-        }
+
+    // ffmpeg and deno: prefer a copy the user already has; only download (and
+    // refresh every six months) when they don't.
+    if let Some(p) = find_in_path("ffmpeg") {
+        tools.ffmpeg = p;
+    } else {
+        let _ = install(ffmpeg, &tools.ffmpeg, Some(TOOL_MAX_AGE));
     }
-    if !tools.deno.is_file() {
-        if let Some(p) = find_in_path("deno") {
-            tools.deno = p;
-        }
+    if let Some(p) = find_in_path("deno") {
+        tools.deno = p;
+    } else {
+        let _ = install(deno, &tools.deno, Some(TOOL_MAX_AGE));
     }
 
     if tools.yt_dlp.is_file() {
@@ -115,8 +122,10 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 }
 
 /// Download, check and unpack one tool. It only appears at `dest` once complete.
-fn install(asset: &Asset, dest: &Path) -> Result<()> {
-    if dest.is_file() {
+/// When `max_age` is set, an existing copy older than that is replaced with the
+/// latest release.
+fn install(asset: &Asset, dest: &Path, max_age: Option<Duration>) -> Result<()> {
+    if dest.is_file() && !is_stale(dest, max_age) {
         return Ok(());
     }
     println!("downloading {}", asset.url);
@@ -194,9 +203,23 @@ fn install(asset: &Asset, dest: &Path) -> Result<()> {
 
     ensure!(program.is_file(), "{file_name} did not contain the program");
     make_executable(&program)?;
+    // `rename` won't overwrite on Windows, so remove any stale copy first.
+    let _ = fs::remove_file(dest);
     fs::rename(&program, dest)?;
     let _ = fs::remove_dir_all(&temp);
     Ok(())
+}
+
+/// Whether `path` is older than `max_age`, or `max_age` is `None`.
+fn is_stale(path: &Path, max_age: Option<Duration>) -> bool {
+    let Some(max_age) = max_age else {
+        return false;
+    };
+    let modified = match fs::metadata(path).and_then(|m| m.modified()) {
+        Ok(modified) => modified,
+        Err(_) => return true, // can't tell its age — refresh to be safe
+    };
+    modified.elapsed().unwrap_or_default() > max_age
 }
 
 #[cfg(unix)]
@@ -280,5 +303,14 @@ mod tests {
             hash,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn is_stale_only_refreshes_bounded_missing_files() {
+        let missing = std::env::temp_dir().join("ytcut-missing-tool");
+        // No max age → never refresh.
+        assert!(!is_stale(&missing, None));
+        // Missing with a max age → refresh.
+        assert!(is_stale(&missing, Some(std::time::Duration::from_secs(1))));
     }
 }
