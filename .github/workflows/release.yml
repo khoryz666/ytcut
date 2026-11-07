@@ -1,0 +1,91 @@
+name: Release
+
+# Build the self-contained binaries. Pushing a v* tag attaches them to a GitHub
+# release; running by hand only uploads build artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build the web page
+        working-directory: src/web
+        run: npm ci && npm run build
+      - name: Fetch yt-dlp and ffmpeg
+        run: python3 scripts/fetch-tools.py --platform x86_64-linux --out tools >> "$GITHUB_ENV"
+      - name: Build the binary
+        env:
+          YTCUT_WEB_DIST: src/web/dist
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release --features bundle --target x86_64-unknown-linux-musl
+      - name: Archive
+        run: |
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/ytcut dist/ytcut
+          tar -C dist -czf ytcut-linux-x86_64.tar.gz ytcut
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ytcut-linux-x86_64
+          path: ytcut-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the web page
+        working-directory: src/web
+        run: npm ci && npm run build
+      - name: Fetch yt-dlp and ffmpeg
+        shell: pwsh
+        run: python scripts/fetch-tools.py --platform x86_64-windows --out tools >> $env:GITHUB_ENV
+      - name: Build the binary
+        env:
+          # Link the C runtime statically so the .exe needs no Visual C++ install.
+          RUSTFLAGS: -C target-feature=+crt-static
+          YTCUT_WEB_DIST: src/web/dist
+        run: cargo build --release --features bundle
+      - name: Archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\ytcut.exe dist\ytcut.exe
+          Compress-Archive -Path dist\ytcut.exe -DestinationPath ytcut-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ytcut-windows-x86_64
+          path: ytcut-windows-x86_64.zip
+
+  release:
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/ytcut-linux-x86_64/*.tar.gz
+            artifacts/ytcut-windows-x86_64/*.zip
