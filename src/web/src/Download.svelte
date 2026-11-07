@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { api, errorMessage, type VideoInfo } from './lib/api';
   import { clock } from './lib/format';
-  import { jobs, pollJobs } from './lib/jobs';
+  import { jobs } from './lib/library';
   import Cut from './Cut.svelte';
   import ErrorText from './ErrorText.svelte';
 
@@ -10,8 +9,7 @@
   let name = $state('');
   let info = $state<VideoInfo | null>(null);
   let looking = $state(false);
-  let lookupError = $state('');
-  let formError = $state('');
+  let error = $state('');
   let start = $state(0);
   let end = $state(0);
   let lookupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -22,7 +20,7 @@
     clearTimeout(lookupTimer);
     if (!link) {
       info = null;
-      lookupError = '';
+      error = '';
       looking = false;
       return;
     }
@@ -34,13 +32,13 @@
   async function lookup(link: string) {
     lookupUrl = link;
     info = null;
-    lookupError = '';
+    error = '';
     looking = true;
     try {
       const video = await api.info(link);
       if (link === lookupUrl) info = video;
     } catch (e) {
-      if (link === lookupUrl) lookupError = errorMessage(e);
+      if (link === lookupUrl) error = errorMessage(e);
     } finally {
       if (link === lookupUrl) looking = false;
     }
@@ -48,7 +46,7 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    formError = '';
+    error = '';
     const fields: Record<string, string> = { url, name };
     const max = Math.floor(info?.duration ?? 0);
     if (max >= 2) {
@@ -62,31 +60,29 @@
       info = null;
       start = 0;
       end = 0;
-      await pollJobs();
     } catch (e) {
-      formError = errorMessage(e);
+      error = errorMessage(e);
     }
   }
-
-  onMount(() => {
-    void pollJobs();
-  });
 </script>
 
-<section id="download">
-  <div class="intro">
-    <h1>Save a song</h1>
-    <p class="hint">Paste a YouTube link, keep the part you like, and it lands in your Music folder.</p>
+<article class="stack">
+  <div class="row between">
+    <h2>Add a song</h2>
+    <span class="hint">Saved to your Music folder</span>
   </div>
 
-  <form class="card" onsubmit={submit}>
-    <input name="url" type="url" required aria-label="YouTube link"
-      placeholder="Paste a YouTube link" bind:value={url}>
+  <form class="stack" onsubmit={submit}>
+    <div class="row">
+      <input name="url" type="url" required aria-label="YouTube link"
+        placeholder="Paste a YouTube link" bind:value={url}>
+      <button class="primary" disabled={looking || !info}>
+        {looking ? 'Looking up…' : 'Download'}
+      </button>
+    </div>
 
-    {#if looking}
-      <p class="hint">Looking up video…</p>
-    {:else if lookupError}
-      <p class="error"><ErrorText message={lookupError} /></p>
+    {#if error}
+      <p class="error"><ErrorText message={error} /></p>
     {/if}
 
     {#if info}
@@ -94,43 +90,41 @@
         {#if info.thumbnail}
           <img src={info.thumbnail} alt="" referrerpolicy="no-referrer">
         {/if}
-        <div>
+        <div class="stack">
           <strong>{info.title}</strong>
           {#if info.duration}
             <span class="hint">{clock(info.duration)}</span>
           {/if}
         </div>
       </div>
-    {/if}
 
-    <label>File name
-      <input name="name" placeholder={info?.title ?? 'Same as the video title'} bind:value={name}>
-    </label>
+      <label>File name
+        <input name="name" placeholder={info.title || 'Video title'} bind:value={name}>
+      </label>
 
-    <Cut duration={info?.duration ?? null} bind:start bind:end />
-
-    <button class="primary" disabled={looking || !url.trim()}>Download</button>
-    {#if formError}
-      <p class="error"><ErrorText message={formError} /></p>
+      <Cut duration={info.duration} bind:start bind:end />
     {/if}
   </form>
 
   {#if $jobs.length}
-    <ul class="card jobs">
+    <ul class="jobs">
       {#each $jobs as job}
         <li>
-          <span>{job.status === 'error' ? job.label : job.message || job.label}</span>
           {#if job.status === 'running'}
+            <span>{job.message || job.label}</span>
             <progress max="100" value={job.progress}></progress>
           {:else if job.status === 'done'}
+            <span>{job.message || job.label}</span>
             <span class="hint">Saved ✓</span>
           {:else if job.status === 'exists'}
+            <span>{job.message || job.label}</span>
             <span class="hint">Already in your library</span>
           {:else}
+            <span>{job.label}</span>
             <span class="error"><ErrorText message={job.message || 'Download failed'} /></span>
           {/if}
         </li>
       {/each}
     </ul>
   {/if}
-</section>
+</article>

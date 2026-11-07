@@ -19,11 +19,8 @@
     stop,
     time,
     toggle,
-    toggleRepeat,
-    toggleShuffle,
   } from './lib/player';
 
-  let { onPlaylistPage = false }: { onPlaylistPage?: boolean } = $props();
   let audio = $state<HTMLAudioElement>();
   let video = $state<HTMLVideoElement>();
   let seeking = $state(false);
@@ -94,11 +91,11 @@
 
     <div class="controls">
       <button class="icon" hidden={!many} aria-pressed={$repeatOne}
-        title="Repeat this song" aria-label="Repeat this song" onclick={toggleRepeat}>🔂</button>
+        title="Repeat this song" aria-label="Repeat this song"
+        onclick={() => repeatOne.update((on) => !on)}>🔂</button>
       <button class="icon" hidden={!many} aria-pressed={$shuffle}
-        title="Shuffle" aria-label="Shuffle" onclick={toggleShuffle}>🔀</button>
-      <a class="icon" hidden={!$current || onPlaylistPage} href="#playlist"
-        title="Playlist" aria-label="Playlist">☰</a>
+        title="Shuffle" aria-label="Shuffle"
+        onclick={() => shuffle.update((on) => !on)}>🔀</button>
       <button class="icon" aria-pressed={$showVideo}
         title={$showVideo ? 'Hide video' : 'Show video'}
         aria-label={$showVideo ? 'Hide video' : 'Show video'}

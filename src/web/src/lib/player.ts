@@ -65,7 +65,7 @@ export function attach(a: HTMLAudioElement, v: HTMLVideoElement) {
 export function playQueue(names: string[]) {
   if (!names.length) return stop();
   queue.set([...names]);
-  play(0);
+  playAt(0);
 }
 
 /** Play a song now without losing the playlist: jump to it, or insert it after the current one. */
@@ -73,11 +73,11 @@ export function playNow(name: string) {
   const names = get(queue);
   if (!names.length) return playQueue([name]);
   const i = names.indexOf(name);
-  if (i >= 0) return play(i);
+  if (i >= 0) return playAt(i);
   const at = get(pos) + 1;
   names.splice(at, 0, name);
   queue.set(names);
-  play(at);
+  playAt(at);
 }
 
 export function addToQueue(name: string) {
@@ -106,25 +106,17 @@ export function remove(name: string) {
   names.splice(i, 1);
   queue.set(names);
   if (i < at) pos.set(at - 1);
-  else if (i === at) play(at % names.length);
+  else if (i === at) playAt(at % names.length);
 }
 
-/** Move a row. `to` is the drop position before the moved row is removed. */
-export function move(from: number, to: number) {
+/** Swap a song with its neighbour. */
+export function move(i: number, to: number) {
   const names = get(queue);
-  if (!Number.isInteger(from) || from < 0 || from >= names.length) return;
-  const target = Math.min(from < to ? to - 1 : to, names.length - 1);
-  if (target === from) return;
+  if (to < 0 || to >= names.length || i === to) return;
   const playing = names[get(pos)];
-  const [row] = names.splice(from, 1);
-  names.splice(target, 0, row);
+  [names[i], names[to]] = [names[to], names[i]];
   queue.set(names);
   pos.set(names.indexOf(playing));
-}
-
-/** Jump to a row in the playlist. */
-export function playAt(i: number) {
-  play(i);
 }
 
 export function next() {
@@ -134,13 +126,13 @@ export function next() {
   const target = get(shuffle) && names.length > 1
     ? (at + 1 + Math.floor(Math.random() * (names.length - 1))) % names.length
     : (at + 1) % names.length;
-  play(target);
+  playAt(target);
 }
 
 export function prev() {
   const names = get(queue);
   if (!names.length) return;
-  play((get(pos) - 1 + names.length) % names.length);
+  playAt((get(pos) - 1 + names.length) % names.length);
 }
 
 export function toggle() {
@@ -153,14 +145,6 @@ export function seekTo(seconds: number) {
   if (!media) return;
   media.currentTime = seconds;
   time.set(seconds);
-}
-
-export function toggleRepeat() {
-  repeatOne.update((on) => !on);
-}
-
-export function toggleShuffle() {
-  shuffle.update((on) => !on);
 }
 
 export function stop() {
@@ -197,7 +181,8 @@ export function setVideo(show: boolean) {
   time.set(at);
 }
 
-function play(i: number, at = 0) {
+/** Jump to a row in the playlist. */
+export function playAt(i: number, at = 0) {
   pos.set(i);
   retries = 0;
   load(at);
