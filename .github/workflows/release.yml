@@ -1,8 +1,5 @@
 name: Release
 
-# Pushing a v* tag builds both binaries and publishes them. A running ytcut finds
-# its asset by the target name in the file name; see update_self in src/tools.rs.
-# The tag must match the version in Cargo.toml.
 on:
   push:
     tags: ['v*']
@@ -16,26 +13,19 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools cmake nasm
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Build
         env:
-          # Cross-compile the C crypto code (aws-lc) and link against musl.
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          CC_x86_64_unknown_linux_musl: musl-gcc
-          # Link the C runtime statically so the .exe needs no Visual C++ install.
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Archive

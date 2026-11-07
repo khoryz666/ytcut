@@ -1,23 +1,21 @@
-//! yt-dlp: look up a video, download it in the background, and track progress.
+//! yt-dlp: look up a song, download its audio in the background, and track progress.
 
 use std::collections::HashSet;
+use std::env;
 use std::fs;
-use std::path::Path;
-use std::process::Stdio;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
-use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
-use tokio::process::{Child, Command};
-
-use crate::app::App;
 use crate::library::{clean_name, MAX_NAME_BYTES};
+use crate::tools::Tools;
 
-/// Where yt-dlp keeps unfinished files, inside the video folder. Emptied at startup.
+/// Where yt-dlp keeps unfinished files, inside the music folder. Emptied at startup.
 pub const TEMP_DIR: &str = ".ytcut-tmp";
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Running,
     Done,
@@ -26,13 +24,13 @@ pub enum Status {
     Error,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Job {
-    /// The chosen file name, or the link when the video title is used.
+    /// The chosen file name, or the link when the song title is used.
     pub label: String,
     pub status: Status,
     pub progress: f64,
-    /// The saved file name, or the error.
+    /// The saved file name, or the error message.
     pub message: String,
 }
 
@@ -42,49 +40,49 @@ impl Job {
     }
 }
 
-#[derive(Serialize)]
-pub struct VideoInfo {
+pub struct SongInfo {
     pub title: String,
     pub duration: Option<f64>,
     pub thumbnail: Option<String>,
 }
 
-/// The download form: only `url` is required.
-#[derive(Deserialize)]
-pub struct StartForm {
-    #[serde(default)]
+pub struct StartOptions {
     pub url: String,
-    #[serde(default)]
     pub name: String,
-    #[serde(default)]
     pub start: String,
-    #[serde(default)]
     pub end: String,
 }
 
-/// Title, duration and thumbnail URL, for the download form preview.
-pub async fn info(app: &App, url: &str) -> Result<VideoInfo, String> {
+/// Remove unfinished downloads from `.ytcut-tmp`.
+pub fn clean_temp(out: &Path) {
+    let _ = fs::remove_dir_all(out.join(TEMP_DIR));
+}
+
+/// Title, duration and thumbnail URL, for preview.
+pub fn info(
+    tools: &Tools,
+    out: &Path,
+    url: &str,
+    browser: Option<&str>,
+) -> Result<SongInfo, String> {
     check_url(url)?;
-    let out = yt_dlp(app)
-        .await?
-        .args([
-            "--skip-download",
-            "--print",
-            "duration",
-            "--print",
-            "title",
-            "--print",
-            "thumbnail",
-            url,
-        ])
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut cmd = base_yt_dlp(tools, out, browser);
+    cmd.args([
+        "--skip-download",
+        "--print",
+        "duration",
+        "--print",
+        "title",
+        "--print",
+        "thumbnail",
+        url,
+    ]);
+    let out = cmd.output().map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
     let duration = lines.next().and_then(finite);
     match (out.status.success(), lines.next()) {
-        (true, Some(title)) => Ok(VideoInfo {
+        (true, Some(title)) => Ok(SongInfo {
             title: title.to_string(),
             duration,
             thumbnail: lines
@@ -95,189 +93,290 @@ pub async fn info(app: &App, url: &str) -> Result<VideoInfo, String> {
         _ => Err(String::from_utf8_lossy(&out.stderr)
             .lines()
             .rfind(|l| l.starts_with("ERROR"))
-            .map_or(
-                "Could not find this video. Check the link.".into(),
-                yt_error,
-            )),
+            .map_or("Could not find this song. Check the link.".into(), yt_error)),
     }
 }
 
 /// Validate the request, then download in the background.
-pub async fn start(app: &App, form: StartForm) -> Result<(), String> {
-    check_url(&form.url)?;
-    let name = clean_name(&form.name);
-    let taken = app.out.join(format!("{name}.mp4")).exists()
-        || app
-            .jobs
+pub fn start(
+    tools: &Tools,
+    out: &Path,
+    jobs: Arc<Mutex<Vec<Job>>>,
+    opts: StartOptions,
+    browser: Option<&str>,
+) -> Result<usize, String> {
+    check_url(&opts.url)?;
+    let name = clean_name(&opts.name);
+    let taken = out.join(format!("{name}.m4a")).exists()
+        || jobs
             .lock()
             .unwrap()
             .iter()
             .any(|j| j.is_running() && j.label == name);
     if !name.is_empty() && taken {
-        return Err(format!("{name}.mp4 already exists. Pick another name."));
+        return Err(format!("{name}.m4a already exists. Pick another name."));
     }
-    if let (Some(s), Some(e)) = (seconds(&form.start)?, seconds(&form.end)?) {
+    if let (Some(s), Some(e)) = (seconds(&opts.start)?, seconds(&opts.end)?) {
         if e <= s {
             return Err("End must be after start.".into());
         }
     }
 
-    // yt-dlp quietly skips a file that is already there; remember what was.
-    let before: HashSet<String> = fs::read_dir(&app.out)
+    let before: HashSet<String> = fs::read_dir(out)
         .map(|dir| {
             dir.flatten()
                 .filter_map(|e| e.file_name().into_string().ok())
                 .collect()
         })
         .unwrap_or_default();
-    let child = download_command(app, &name, &form.start, &form.end)
-        .await?
-        .arg(&form.url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+
+    let mut cmd = download_command(tools, out, &name, &opts.start, &opts.end, browser);
+    cmd.arg(&opts.url);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Could not run yt-dlp: {e}"))?;
-    track(app, child, or(&name, &form.url).to_string(), before);
-    Ok(())
+
+    let label = if !name.is_empty() {
+        name
+    } else {
+        opts.url.clone()
+    };
+
+    let id = {
+        let mut list = jobs.lock().unwrap();
+        list.push(Job {
+            label,
+            status: Status::Running,
+            progress: 0.0,
+            message: String::new(),
+        });
+        list.len() - 1
+    };
+
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let jobs_clone = Arc::clone(&jobs);
+
+    thread::spawn(move || {
+        let stdout_reader = BufReader::new(stdout);
+        let stderr_reader = BufReader::new(stderr);
+
+        let jobs_out = Arc::clone(&jobs_clone);
+        let out_handle = thread::spawn(move || {
+            for line in stdout_reader.lines().map_while(Result::ok) {
+                let line = line.trim();
+                let mut jobs = jobs_out.lock().unwrap();
+                if let Some(job) = jobs.get_mut(id) {
+                    if let Some(p) = line.strip_prefix("download:PROGRESS ") {
+                        let pct_str = p.trim().trim_end_matches('%');
+                        if let Some(pct) = finite(pct_str) {
+                            job.progress = pct;
+                        }
+                    } else if let Some(path) = line.strip_prefix("after_move:SAVED ") {
+                        job.message = Path::new(path)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into();
+                    }
+                }
+            }
+        });
+
+        let jobs_err = Arc::clone(&jobs_clone);
+        let err_handle = thread::spawn(move || {
+            for line in stderr_reader.lines().map_while(Result::ok) {
+                let line = line.trim();
+                let mut jobs = jobs_err.lock().unwrap();
+                if let Some(job) = jobs.get_mut(id) {
+                    if line.starts_with("ERROR") {
+                        job.message = yt_error(line);
+                    }
+                }
+            }
+        });
+
+        let _ = out_handle.join();
+        let _ = err_handle.join();
+
+        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+        let mut jobs = jobs_clone.lock().unwrap();
+        if let Some(job) = jobs.get_mut(id) {
+            let existed = before.contains(&job.message);
+            job.status = match (ok, existed) {
+                (false, _) => Status::Error,
+                (true, true) => Status::Exists,
+                (true, false) => Status::Done,
+            };
+            if ok {
+                job.progress = 100.0;
+            } else if job.message.is_empty() {
+                job.message = "Download failed.".into();
+            }
+        }
+    });
+
+    Ok(id)
 }
 
-/// yt-dlp for a single video, signed in with the browser profile's cookies once it exists.
-/// It runs inside the video folder so the folder's path never meets its output template,
-/// which would expand any `%` or `$` in it.
-async fn yt_dlp(app: &App) -> Result<Command, String> {
-    let tools = app.tools().await?;
+/// yt-dlp base command configured for library directory and cookies.
+fn base_yt_dlp(tools: &Tools, out: &Path, browser: Option<&str>) -> Command {
     let mut cmd = Command::new(&tools.yt_dlp);
-    cmd.current_dir(&app.out)
+    cmd.current_dir(out)
         .stdin(Stdio::null())
         .args(["--ignore-config", "--no-playlist", "--encoding", "utf-8"])
         .arg("--ffmpeg-location")
         .arg(&tools.ffmpeg)
         .arg("--js-runtimes")
         .arg(format!("deno:{}", tools.deno.display()));
-    let profile_exists = |spec: &&str| {
-        spec.split_once(':')
-            .is_some_and(|(_, dir)| Path::new(dir).is_dir())
-    };
-    if let Some(spec) = app.cookies.as_deref().filter(profile_exists) {
-        cmd.args(["--cookies-from-browser", spec]);
+
+    if let Some(browser) = browser {
+        cmd.args(["--cookies-from-browser", browser]);
     }
-    Ok(cmd)
+    cmd
 }
 
-/// Download to `<folder>/<name>.mp4`, or the video title when `name` is empty.
-async fn download_command(
-    app: &App,
+/// Download `<folder>/<name>.m4a` (audio only), or the song title when `name` is empty.
+fn download_command(
+    tools: &Tools,
+    out: &Path,
     name: &str,
     start: &str,
     end: &str,
-) -> Result<Command, String> {
+    browser: Option<&str>,
+) -> Command {
     let cut = !start.is_empty() || !end.is_empty();
-    // `%` would be read as a yt-dlp output template field.
     let template = if !name.is_empty() {
         name.replace('%', "%%")
     } else if cut {
-        // Each part gets its own file, or yt-dlp would keep the first one and skip the rest.
-        let part = format!("{}-{}", or(start, "0"), or(end, "end")).replace(':', ".");
+        let part =
+            format!("{}-{}", or_default(start, "0"), or_default(end, "end")).replace(':', ".");
         format!("%(title).{MAX_NAME_BYTES}B ({part})")
     } else {
-        // Cut long titles to fit the 255-byte file name limit.
         format!("%(title).{MAX_NAME_BYTES}B")
     };
-    let mut cmd = yt_dlp(app).await?;
+
+    let mut cmd = base_yt_dlp(tools, out, browser);
     cmd.args(["--newline", "--progress"])
         .args([
             "--progress-template",
             "download:PROGRESS %(progress._percent_str)s",
         ])
         .args(["--print", "after_move:SAVED %(filepath)s"])
-        // Half-finished files stay out of the library.
         .args(["-P", &format!("temp:{TEMP_DIR}")])
-        // Prefer H.264 + AAC so the MP4 plays everywhere.
         .args([
             "-f",
-            "bv*+ba/b",
-            "-S",
-            "vcodec:h264,res,acodec:aac",
-            "--merge-output-format",
-            "mp4",
+            "bestaudio/best",
+            "-x",
+            "--audio-format",
+            "m4a",
+            "--audio-quality",
+            "0",
         ])
         .arg("-o")
         .arg(format!("{template}.%(ext)s"));
+
     if cut {
-        let range = format!("*{}-{}", or(start, "0"), or(end, "inf"));
+        let range = format!("*{}-{}", or_default(start, "0"), or_default(end, "inf"));
         cmd.args(["--download-sections", &range, "--force-keyframes-at-cuts"]);
     }
-    Ok(cmd)
+    cmd
 }
 
-/// Add a job for the running download and update it until yt-dlp exits.
-/// `before` holds the folder's file names from before the download.
-fn track(app: &App, mut child: Child, label: String, before: HashSet<String>) {
-    let id = {
-        let mut jobs = app.jobs.lock().unwrap();
-        jobs.push(Job {
-            label,
-            status: Status::Running,
-            progress: 0.0,
-            message: String::new(),
-        });
-        jobs.len() - 1
-    };
-    let jobs = app.jobs.clone();
-    tokio::spawn(async move {
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-        let ((), ()) = tokio::join!(
-            watch(stdout, jobs.clone(), id),
-            watch(stderr, jobs.clone(), id),
-        );
-        let ok = child.wait().await.is_ok_and(|s| s.success());
-        let mut jobs = jobs.lock().unwrap();
-        let job = &mut jobs[id];
-        let existed = before.contains(&job.message);
-        job.status = match (ok, existed) {
-            (false, _) => Status::Error,
-            (true, true) => Status::Exists,
-            (true, false) => Status::Done,
-        };
-        if ok {
-            job.progress = 100.0;
-        }
-    });
+/// Resolve the config `browser` value to a yt-dlp browser name, or None.
+/// "none" disables cookies; "auto" (or unset) auto-detects an installed browser.
+pub fn resolve_browser(config_browser: Option<&str>) -> Option<String> {
+    match config_browser {
+        Some("none") => None,
+        Some(name) if name != "auto" => Some(name.to_string()),
+        _ => detect_browser(),
+    }
 }
 
-/// Feed yt-dlp output lines into the job: progress, final file path, or last error.
-async fn watch(stream: impl AsyncRead + Unpin, jobs: Arc<Mutex<Vec<Job>>>, id: usize) {
-    let mut reader = BufReader::new(stream);
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        match reader.read_until(b'\n', &mut buf).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {}
-        }
-        let line = String::from_utf8_lossy(&buf);
-        let line = line.trim();
-        let mut jobs = jobs.lock().unwrap();
-        let Some(job) = jobs.get_mut(id) else {
-            continue;
-        };
-        if let Some(p) = line.strip_prefix("PROGRESS ") {
-            job.progress = finite(p.trim().trim_end_matches('%')).unwrap_or(job.progress);
-        } else if let Some(path) = line.strip_prefix("SAVED ") {
-            job.message = Path::new(path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into();
-        } else if line.starts_with("ERROR") {
-            job.message = yt_error(line);
+/// Detect an installed Chromium browser name for `--cookies-from-browser <name>`.
+pub fn detect_browser() -> Option<String> {
+    if let Ok(chosen) = env::var("YTCUT_BROWSER") {
+        if !chosen.trim().is_empty() {
+            let name = chosen.to_ascii_lowercase();
+            return Some(browser_kind(&name).to_string());
         }
     }
+    for candidate in browser_candidates() {
+        if locate_browser(&candidate).is_some() {
+            let stem = candidate
+                .file_stem()?
+                .to_string_lossy()
+                .to_ascii_lowercase();
+            return Some(browser_kind(&stem).to_string());
+        }
+    }
+    None
+}
+
+fn browser_kind(name: &str) -> &'static str {
+    [
+        ("chromium", "chromium"),
+        ("brave", "brave"),
+        ("edge", "edge"),
+        ("vivaldi", "vivaldi"),
+    ]
+    .into_iter()
+    .find(|(part, _)| name.contains(part))
+    .map_or("chrome", |(_, kind)| kind)
+}
+
+fn locate_browser(program: &Path) -> Option<PathBuf> {
+    if program.is_absolute() {
+        return program.is_file().then(|| program.to_path_buf());
+    }
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .map(|dir| dir.join(program).with_extension(env::consts::EXE_EXTENSION))
+        .find(|file| file.is_file())
+}
+
+#[cfg(not(windows))]
+fn browser_candidates() -> Vec<PathBuf> {
+    [
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+        "brave",
+        "microsoft-edge-stable",
+        "microsoft-edge",
+        "vivaldi-stable",
+        "vivaldi",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .collect()
+}
+
+#[cfg(windows)]
+fn browser_candidates() -> Vec<PathBuf> {
+    let programs = [
+        r"Google\Chrome\Application\chrome.exe",
+        r"Microsoft\Edge\Application\msedge.exe",
+        r"BraveSoftware\Brave-Browser\Application\brave.exe",
+        r"Vivaldi\Application\vivaldi.exe",
+    ];
+    let roots: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
+        .into_iter()
+        .filter_map(env::var_os)
+        .map(PathBuf::from)
+        .collect();
+    programs
+        .iter()
+        .flat_map(|program| roots.iter().map(move |root| root.join(program)))
+        .collect()
 }
 
 /// "ERROR: [youtube] id: Sign in to confirm. Use --cookies ..." -> "Sign in to confirm."
-fn yt_error(line: &str) -> String {
+pub fn yt_error(line: &str) -> String {
     let msg = line.trim_start_matches("ERROR:").trim();
     let msg = match msg.strip_prefix('[') {
         Some(rest) => rest.split_once(": ").map_or(msg, |(_, m)| m),
@@ -290,7 +389,7 @@ fn yt_error(line: &str) -> String {
         .to_string()
 }
 
-fn check_url(url: &str) -> Result<(), String> {
+pub fn check_url(url: &str) -> Result<(), String> {
     if url.starts_with("https://") || url.starts_with("http://") {
         Ok(())
     } else {
@@ -299,7 +398,7 @@ fn check_url(url: &str) -> Result<(), String> {
 }
 
 /// Parse "", "90", "1:30" or "1:02:03.5" into seconds.
-fn seconds(t: &str) -> Result<Option<f64>, String> {
+pub fn seconds(t: &str) -> Result<Option<f64>, String> {
     if t.is_empty() {
         return Ok(None);
     }
@@ -314,11 +413,11 @@ fn seconds(t: &str) -> Result<Option<f64>, String> {
         .map_err(|_| bad())
 }
 
-fn finite(s: &str) -> Option<f64> {
+pub fn finite(s: &str) -> Option<f64> {
     s.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
-fn or<'a>(s: &'a str, default: &'a str) -> &'a str {
+fn or_default<'a>(s: &'a str, default: &'a str) -> &'a str {
     if s.is_empty() {
         default
     } else {

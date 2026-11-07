@@ -1,41 +1,70 @@
-//! The video folder: listing, renaming, deleting, and safe file names.
+//! The music folder: listing, renaming, deleting, and safe file names.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::Serialize;
-
 /// Leaves room for an extension and yt-dlp's temporary suffixes within 255 bytes.
 pub const MAX_NAME_BYTES: usize = 200;
 
-const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "mkv", "mov"];
+/// Audio files ytcut plays.
+pub const AUDIO_EXTENSIONS: [&str; 9] = [
+    "m4a", "mp3", "m4b", "aac", "ogg", "oga", "opus", "flac", "wav",
+];
 
-#[derive(Serialize)]
-pub struct VideoFile {
+/// Video extensions stripped from clean_name.
+pub const VIDEO_EXTENSIONS: [&str; 9] = [
+    "mp4", "m4v", "mkv", "mov", "avi", "flv", "webm", "3gp", "ts",
+];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Song {
     pub name: String,
     pub size: u64,
 }
 
-/// A video file directly inside the folder.
+impl Song {
+    pub fn formatted_size(&self) -> String {
+        format_size(self.size)
+    }
+}
+
+pub fn format_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.1} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// A song directly inside the folder.
 pub fn find(out: &Path, name: &str) -> Result<PathBuf, String> {
     let path = out.join(name);
-    let video = path
+    let is_audio = path
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)));
+        .is_some_and(|e| AUDIO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)));
     // Windows also treats `\\` and `C:` as path syntax.
     let plain = !name.contains(['/', '\\', ':']) && !name.starts_with('.');
-    if !plain || !path.is_file() || !video {
+    if !plain || !path.is_file() || !is_audio {
         return Err(format!("{name} not found."));
     }
     Ok(path)
 }
 
-/// The folder's videos, newest first.
-pub fn list(out: &Path) -> io::Result<Vec<VideoFile>> {
-    let mut files: Vec<(u64, VideoFile)> = fs::read_dir(out)?
+/// The folder's songs, newest first. Only audio files.
+pub fn list(out: &Path) -> io::Result<Vec<Song>> {
+    let mut files: Vec<(u64, Song)> = fs::read_dir(out)?
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
@@ -52,7 +81,7 @@ pub fn list(out: &Path) -> io::Result<Vec<VideoFile>> {
                 .as_secs();
             Some((
                 modified,
-                VideoFile {
+                Song {
                     name,
                     size: meta.len(),
                 },
@@ -63,7 +92,7 @@ pub fn list(out: &Path) -> io::Result<Vec<VideoFile>> {
     Ok(files.into_iter().map(|(_, file)| file).collect())
 }
 
-/// Rename a video, keeping its extension. Returns the new file name.
+/// Rename a song, keeping its extension. Returns the new file name.
 pub fn rename(out: &Path, name: &str, to: &str) -> Result<String, String> {
     let from = find(out, name)?;
     let to = clean_name(to);
@@ -84,9 +113,9 @@ pub fn delete(out: &Path, name: &str) -> Result<(), String> {
     fs::remove_file(find(out, name)?).map_err(|e| e.to_string())
 }
 
-/// A file name without extension: invalid characters replaced, a typed video extension
-/// dropped, and cut to fit the file name length limit. `$` goes too, because yt-dlp expands
-/// `$HOME` in its output template and has no escape for it.
+/// A file name without extension: invalid characters replaced, a typed audio or video
+/// extension dropped, and cut to fit the file name length limit. `$` goes too, because
+/// yt-dlp expands `$HOME` in its output template and has no escape for it.
 pub fn clean_name(name: &str) -> String {
     let name: String = name
         .chars()
@@ -99,8 +128,12 @@ pub fn clean_name(name: &str) -> String {
         })
         .collect();
     let name = name.trim();
+    let known = |ext: &str| {
+        AUDIO_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e))
+            || VIDEO_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e))
+    };
     let name = match name.rsplit_once('.') {
-        Some((base, ext)) if VIDEO_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)) => base,
+        Some((base, ext)) if known(ext) => base,
         _ => name,
     };
     let name = name.trim().trim_matches('.');
@@ -133,7 +166,8 @@ mod tests {
     #[test]
     fn clean_name_strips_bad_chars_and_typed_extension() {
         assert_eq!(clean_name(" a/b:c.MP4 "), "a_b_c");
-        assert_eq!(clean_name("song.mp3"), "song.mp3");
+        assert_eq!(clean_name("song.m4a"), "song");
+        assert_eq!(clean_name("song.mp3"), "song");
         assert_eq!(clean_name("..hidden.."), "hidden");
         assert_eq!(clean_name("50% off"), "50% off");
         assert_eq!(clean_name("$HOME"), "_HOME");
@@ -146,12 +180,13 @@ mod tests {
     fn find_rejects_path_syntax() {
         let dir = std::env::temp_dir();
         for name in [
-            "../a.mp4",
-            "a/b.mp4",
-            "..\\a.mp4",
-            "x\\..\\a.mp4",
-            "C:\\a.mp4",
-            ".a.mp4",
+            "../a.m4a",
+            "a/b.m4a",
+            "..\\a.m4a",
+            "x\\..\\a.m4a",
+            "C:\\a.m4a",
+            ".a.m4a",
+            "video.mp4",
         ] {
             assert!(find(&dir, name).is_err(), "{name}");
         }

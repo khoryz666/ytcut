@@ -1,16 +1,14 @@
 //! yt-dlp, ffmpeg and deno: downloaded from their own releases on first use and checked
 //! against the checksums published there. After that yt-dlp keeps itself current, which
-//! matters because YouTube keeps breaking old versions, and ytcut updates from its own releases.
+//! matters because YouTube keeps breaking old versions.
 
 use std::fs::{self, File};
-use std::io::{BufWriter, Read};
+use std::io::{self, BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::Command;
 
 use anyhow::{bail, ensure, Context, Result};
-use self_update::{backends::github, cargo_crate_version, Download, Extract};
 use sha2::{Digest, Sha256};
-use tokio::process::Command;
 
 #[cfg(not(all(target_arch = "x86_64", any(target_os = "linux", windows))))]
 compile_error!("ytcut only knows the tool downloads for x86-64 Linux and Windows");
@@ -61,7 +59,7 @@ const ASSETS: [Asset; 3] = [
     },
 ];
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tools {
     pub yt_dlp: PathBuf,
     pub ffmpeg: PathBuf,
@@ -96,15 +94,27 @@ fn install(asset: &Asset, dest: &Path) -> Result<()> {
 
     let file_name = asset.url.rsplit('/').next().unwrap_or_default();
     let archive = temp.join(file_name);
-    let writer = BufWriter::new(File::create(&archive)?);
-    Download::from_url(asset.url)
-        .download_to(writer)
-        .with_context(|| format!("could not download {file_name}"))?;
-    let mut sums = Vec::new();
-    Download::from_url(asset.sums)
-        .download_to(&mut sums)
-        .with_context(|| format!("could not download the checksums of {file_name}"))?;
-    let sums = String::from_utf8_lossy(&sums);
+
+    // Download archive file
+    {
+        let resp = ureq::get(asset.url)
+            .call()
+            .with_context(|| format!("could not download {}", asset.url))?;
+        let mut reader = resp.into_reader();
+        let mut writer = BufWriter::new(File::create(&archive)?);
+        io::copy(&mut reader, &mut writer)
+            .with_context(|| format!("failed writing {file_name}"))?;
+    }
+
+    // Download checksum file
+    let sums = {
+        let resp = ureq::get(asset.sums)
+            .call()
+            .with_context(|| format!("could not download checksums from {}", asset.sums))?;
+        resp.into_string()
+            .with_context(|| format!("failed reading checksums for {file_name}"))?
+    };
+
     let expected = expected_hash(&sums, file_name)
         .with_context(|| format!("no published checksum for {file_name}"))?;
     let actual = sha256(&archive)?;
@@ -114,13 +124,42 @@ fn install(asset: &Asset, dest: &Path) -> Result<()> {
 
     let program = match asset.inside {
         Some(inside) => {
-            Extract::from_source(&archive)
-                .extract_file(&temp, inside)
-                .with_context(|| format!("could not unpack {file_name}"))?;
-            temp.join(inside)
+            let extracted = temp.join("extracted_bin");
+            if file_name.ends_with(".tar.xz") {
+                let tar_path = temp.join("archive.tar");
+                {
+                    let mut src = BufReader::new(File::open(&archive)?);
+                    let mut dst = BufWriter::new(File::create(&tar_path)?);
+                    lzma_rs::xz_decompress(&mut src, &mut dst)
+                        .with_context(|| format!("could not decompress xz {file_name}"))?;
+                }
+                let mut tar_archive = tar::Archive::new(File::open(&tar_path)?);
+                let mut found = false;
+                for entry in tar_archive.entries()? {
+                    let mut entry = entry?;
+                    if entry.path()? == Path::new(inside) {
+                        entry.unpack(&extracted)?;
+                        found = true;
+                        break;
+                    }
+                }
+                ensure!(found, "could not find {inside} inside {file_name}");
+            } else if file_name.ends_with(".zip") {
+                let mut zip_archive = zip::ZipArchive::new(File::open(&archive)?)
+                    .with_context(|| format!("could not open zip {file_name}"))?;
+                let mut zip_file = zip_archive
+                    .by_name(inside)
+                    .with_context(|| format!("could not find {inside} inside {file_name}"))?;
+                let mut dest_file = File::create(&extracted)?;
+                io::copy(&mut zip_file, &mut dest_file)?;
+            } else {
+                bail!("unsupported archive format for {file_name}");
+            }
+            extracted
         }
         None => archive,
     };
+
     ensure!(program.is_file(), "{file_name} did not contain the program");
     make_executable(&program)?;
     fs::rename(&program, dest)?;
@@ -129,18 +168,18 @@ fn install(asset: &Asset, dest: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn make_executable(path: &Path) -> Result<()> {
+pub fn make_executable(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn make_executable(_path: &Path) -> Result<()> {
+pub fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn sha256(path: &Path) -> Result<String> {
+pub fn sha256(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut chunk = vec![0; 1 << 20];
@@ -160,7 +199,7 @@ fn sha256(path: &Path) -> Result<String> {
 
 /// The hash for `file_name` in a checksum file. Most list `HASH  NAME` lines. Deno's
 /// Windows one is PowerShell output for a single file, whose path was the build machine's.
-fn expected_hash<'a>(sums: &'a str, file_name: &str) -> Option<&'a str> {
+pub fn expected_hash<'a>(sums: &'a str, file_name: &str) -> Option<&'a str> {
     let is_hash = |word: &&str| word.len() == 64 && word.bytes().all(|b| b.is_ascii_hexdigit());
     let listed = sums
         .lines()
@@ -173,47 +212,8 @@ fn expected_hash<'a>(sums: &'a str, file_name: &str) -> Option<&'a str> {
 }
 
 /// Let yt-dlp replace itself with the latest release. Failing is fine: it tries again next start.
-pub async fn update_yt_dlp(tools: &Tools) {
-    let update = Command::new(&tools.yt_dlp)
-        .arg("-U")
-        .kill_on_drop(true)
-        .output();
-    match tokio::time::timeout(Duration::from_secs(120), update).await {
-        Ok(Ok(out)) if !out.status.success() => {
-            eprintln!(
-                "yt-dlp update failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
-        Ok(Err(e)) => eprintln!("yt-dlp update failed: {e}"),
-        Err(_) => eprintln!("yt-dlp update timed out"),
-        Ok(Ok(_)) => {}
-    }
-}
-
-/// Replace this binary with the latest GitHub release, used from the next start. Failing is
-/// fine: this copy keeps working and it tries again next start.
-pub async fn update_self() {
-    let update = tokio::task::spawn_blocking(|| -> Result<_> {
-        Ok(github::Update::configure()
-            .repo_owner("khoryz666")
-            .repo_name("ytcut")
-            .bin_name("ytcut")
-            .current_version(cargo_crate_version!())
-            .no_confirm(true)
-            .show_output(false)
-            .show_download_progress(false)
-            .build()?
-            .update()?)
-    });
-    match update.await {
-        Ok(Ok(status)) if status.is_updated() => {
-            println!("updated to {}; restart ytcut to use it", status.version());
-        }
-        Ok(Err(e)) => eprintln!("self-update failed: {e:#}"),
-        Err(e) => eprintln!("self-update failed: {e}"),
-        Ok(Ok(_)) => {}
-    }
+pub fn update_yt_dlp(tools: &Tools) {
+    let _ = Command::new(&tools.yt_dlp).arg("-U").output();
 }
 
 #[cfg(test)]
@@ -243,7 +243,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("ytcut-test-{}", std::process::id()));
         fs::write(&path, "hello").unwrap();
         let hash = sha256(&path).unwrap();
-        fs::remove_file(&path).unwrap();
+        let _ = fs::remove_file(&path);
         assert_eq!(
             hash,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
