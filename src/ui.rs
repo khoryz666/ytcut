@@ -12,9 +12,9 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 
 use crate::config::Config;
@@ -23,6 +23,33 @@ use crate::library::{self, Song};
 use crate::player::Player;
 use crate::tools::Tools;
 use crate::update::UPDATE_NOTICE;
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+mod theme {
+    use ratatui::style::Color;
+
+    /// Near-black base with a cool blue tint.
+    pub const BG: Color = Color::Rgb(15, 16, 25);
+    /// Panel and popup background.
+    pub const SURFACE: Color = Color::Rgb(22, 24, 38);
+    /// Inactive panel borders.
+    pub const BORDER: Color = Color::Rgb(52, 58, 88);
+    /// Primary text.
+    pub const FG: Color = Color::Rgb(201, 207, 233);
+    /// Dim text, hints, file sizes.
+    pub const MUTED: Color = Color::Rgb(96, 105, 150);
+    /// Accent: focus, selection, progress.
+    pub const ACCENT: Color = Color::Rgb(122, 162, 247);
+    /// Playing / success.
+    pub const GREEN: Color = Color::Rgb(158, 206, 106);
+    /// Status messages.
+    pub const YELLOW: Color = Color::Rgb(224, 175, 104);
+    /// Errors and destructive actions.
+    pub const RED: Color = Color::Rgb(247, 118, 142);
+    /// Update notices.
+    pub const MAGENTA: Color = Color::Rgb(187, 154, 247);
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
@@ -148,7 +175,11 @@ pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
 ];
 
 pub fn matching_commands(input: &str) -> Vec<&'static PaletteItem> {
-    let clean = input.trim().strip_prefix('/').unwrap_or(input.trim()).to_lowercase();
+    let clean = input
+        .trim()
+        .strip_prefix('/')
+        .unwrap_or(input.trim())
+        .to_lowercase();
     let query_cmd = clean.split_whitespace().next().unwrap_or_default();
 
     if query_cmd.is_empty() {
@@ -159,8 +190,7 @@ pub fn matching_commands(input: &str) -> Vec<&'static PaletteItem> {
         .iter()
         .filter(|item| {
             let item_clean = item.cmd.strip_prefix('/').unwrap_or(item.cmd);
-            item_clean.contains(query_cmd)
-                || item.desc.to_lowercase().contains(query_cmd)
+            item_clean.contains(query_cmd) || item.desc.to_lowercase().contains(query_cmd)
         })
         .collect()
 }
@@ -935,13 +965,7 @@ impl AppUi {
         }
 
         let count = files.len();
-        match crate::background::spawn(
-            &self.library_dir,
-            &files,
-            shuffle,
-            repeat,
-            start_secs,
-        ) {
+        match crate::background::spawn(&self.library_dir, &files, shuffle, repeat, start_secs) {
             Ok(()) => {
                 if let Some(player) = &mut self.player {
                     player.pause();
@@ -1086,39 +1110,52 @@ impl AppUi {
     fn render(&self, f: &mut ratatui::Frame) {
         let size = f.area();
 
+        // A single base surface so the whole screen reads as one app.
+        f.render_widget(Block::default().style(Style::default().bg(theme::BG)), size);
+
         let has_running_job = {
             let jobs = self.jobs.lock().unwrap();
             jobs.iter().any(|j| j.status == Status::Running)
         };
 
-        let chunks = if has_running_job {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1), // Download progress banner
-                    Constraint::Min(8),    // Library & Playlist
-                    Constraint::Length(3), // Player bar
-                    Constraint::Length(1), // Status / update / help bar
-                ])
-                .split(size)
-        } else {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(0),
-                    Constraint::Min(8),    // Library & Playlist
-                    Constraint::Length(3), // Player bar
-                    Constraint::Length(1), // Status / update / help bar
-                ])
-                .split(size)
-        };
-
+        let mut constraints: Vec<Constraint> = Vec::new();
         if has_running_job {
-            self.render_download_banner(f, chunks[0]);
+            constraints.push(Constraint::Length(1)); // download banner
         }
-        self.render_middle_columns(f, chunks[1]);
-        self.render_player_bar(f, chunks[2]);
-        self.render_bottom_status(f, chunks[3]);
+        constraints.push(Constraint::Length(1)); // header
+        constraints.push(Constraint::Min(8)); // library & queue
+        constraints.push(Constraint::Length(3)); // player bar
+        constraints.push(Constraint::Length(1)); // status bar
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .spacing(1)
+            .split(size);
+
+        let mut idx = 0;
+        let banner = if has_running_job {
+            let area = chunks[idx];
+            idx += 1;
+            Some(area)
+        } else {
+            None
+        };
+        let header = chunks[idx];
+        idx += 1;
+        let middle = chunks[idx];
+        idx += 1;
+        let player = chunks[idx];
+        idx += 1;
+        let status = chunks[idx];
+
+        if let Some(banner) = banner {
+            self.render_download_banner(f, banner);
+        }
+        self.render_header(f, header);
+        self.render_middle_columns(f, middle);
+        self.render_player_bar(f, player);
+        self.render_bottom_status(f, status);
 
         if let Some(prompt) = &self.prompt {
             self.render_prompt(f, prompt, size);
@@ -1137,26 +1174,81 @@ impl AppUi {
         }
     }
 
+    fn render_header(&self, f: &mut ratatui::Frame, area: Rect) {
+        let version = env!("CARGO_PKG_VERSION");
+        let count = self.songs.len();
+        let songs = if count == 1 { "song" } else { "songs" };
+        let dir = truncate_str(&self.library_dir.display().to_string(), 40);
+
+        let wordmark = " ytcut";
+        let version = format!(" v{version} ");
+        let right = format!("{count} {songs} · {dir}  ");
+
+        let width = area.width as usize;
+        let left_w = wordmark.chars().count() + version.chars().count();
+        let right_w = right.chars().count();
+        let pad = width.saturating_sub(left_w + right_w);
+
+        let line = Line::from(vec![
+            Span::styled(
+                wordmark,
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(version, Style::default().fg(theme::MUTED)),
+            Span::raw(" ".repeat(pad)),
+            Span::styled(right, Style::default().fg(theme::MUTED)),
+        ]);
+
+        f.render_widget(
+            Paragraph::new(line).style(Style::default().bg(theme::BG)),
+            area,
+        );
+    }
+
     fn render_download_banner(&self, f: &mut ratatui::Frame, area: Rect) {
         let jobs = self.jobs.lock().unwrap();
         if let Some(job) = jobs.iter().rev().find(|j| j.status == Status::Running) {
-            let label = truncate_str(&job.label, 30);
-            let gauge = Gauge::default()
-                .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
-                .ratio((job.progress / 100.0).clamp(0.0, 1.0))
-                .label(format!("Downloading {label}: {:.0}%", job.progress));
-            f.render_widget(gauge, area);
+            let label = truncate_str(&job.label, 26);
+            let bar_w = area.width.saturating_sub(22).max(8);
+
+            let mut spans: Vec<Span> = vec![
+                Span::styled(
+                    " ↓ ",
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("{label} "), Style::default().fg(theme::FG)),
+            ];
+            spans.extend(progress_bar(job.progress / 100.0, bar_w));
+            spans.push(Span::styled(
+                format!(" {:.0}%", job.progress),
+                Style::default().fg(theme::MUTED),
+            ));
+
+            f.render_widget(
+                Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::BG)),
+                area,
+            );
         }
     }
 
     fn render_add_dialog(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(68, 52, area);
-        f.render_widget(Clear, popup);
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Download from YouTube ")
-            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            .border_type(BorderType::Rounded)
+            .title(" Add from YouTube ")
+            .title_style(
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(theme::ACCENT))
+            .style(Style::default().bg(theme::SURFACE));
         f.render_widget(block, popup);
 
         let inner = popup.inner(ratatui::layout::Margin {
@@ -1169,155 +1261,85 @@ impl AppUi {
             .constraints([
                 Constraint::Length(2), // URL
                 Constraint::Length(2), // Name
-                Constraint::Length(2), // Cut Start & End
-                Constraint::Min(1),    // Spacer
-                Constraint::Length(1), // Footer hint
+                Constraint::Length(2), // Cut
+                Constraint::Min(1),    // spacer
+                Constraint::Length(1), // footer
             ])
             .split(inner);
 
-        // URL Field
         let url_focused = self.add_field == AddField::Url;
-        let url_style = if url_focused {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Cyan)
-        };
-        let url_val = if self.add_url.is_empty() && url_focused {
-            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
-        } else if self.add_url.is_empty() {
-            Span::styled("<paste or type YouTube URL>", Style::default().fg(Color::DarkGray))
-        } else {
-            Span::styled(
-                &self.add_url,
-                if url_focused {
-                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            )
-        };
         let url_line = Line::from(vec![
-            Span::styled(if url_focused { "▶ URL:  " } else { "  URL:  " }, url_style),
-            url_val,
+            field_label("URL", url_focused),
+            field_value(&self.add_url, "<paste or type a YouTube URL>", url_focused),
         ]);
         f.render_widget(Paragraph::new(url_line), rows[0]);
 
-        // Name Field
         let name_focused = self.add_field == AddField::Name;
-        let name_style = if name_focused {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Cyan)
-        };
-        let name_val = if self.add_name.is_empty() && name_focused {
-            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
-        } else if self.add_name.is_empty() {
-            Span::styled("<optional: default is video title>", Style::default().fg(Color::DarkGray))
-        } else {
-            Span::styled(
-                &self.add_name,
-                if name_focused {
-                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            )
-        };
         let name_line = Line::from(vec![
-            Span::styled(if name_focused { "▶ Name: " } else { "  Name: " }, name_style),
-            name_val,
+            field_label("Name", name_focused),
+            field_value(
+                &self.add_name,
+                "<optional — defaults to the video title>",
+                name_focused,
+            ),
         ]);
         f.render_widget(Paragraph::new(name_line), rows[1]);
 
-        // Cut Range (Start and End)
         let start_focused = self.add_field == AddField::Start;
         let end_focused = self.add_field == AddField::End;
         let cut_active = start_focused || end_focused;
-        let cut_style = if cut_active {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Cyan)
-        };
-
-        let start_val = if self.add_start.is_empty() && start_focused {
-            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
-        } else if self.add_start.is_empty() {
-            Span::styled("0", Style::default().fg(Color::DarkGray))
-        } else {
-            Span::styled(
-                &self.add_start,
-                if start_focused {
-                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            )
-        };
-
-        let end_val = if self.add_end.is_empty() && end_focused {
-            Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED))
-        } else if self.add_end.is_empty() {
-            Span::styled("end", Style::default().fg(Color::DarkGray))
-        } else {
-            Span::styled(
-                &self.add_end,
-                if end_focused {
-                    Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            )
-        };
-
         let cut_line = Line::from(vec![
-            Span::styled(if cut_active { "▶ Cut:  " } else { "  Cut:  " }, cut_style),
-            Span::raw("Start: "),
-            start_val,
-            Span::raw("    End: "),
-            end_val,
-            Span::styled("  (e.g. 1:30 or 90)", Style::default().fg(Color::DarkGray)),
+            field_label("Cut", cut_active),
+            Span::styled("Start ", Style::default().fg(theme::MUTED)),
+            field_value(&self.add_start, "0:00", start_focused),
+            Span::styled("  End ", Style::default().fg(theme::MUTED)),
+            field_value(&self.add_end, "end", end_focused),
         ]);
         f.render_widget(Paragraph::new(cut_line), rows[2]);
 
-        // Footer hint
-        let footer = Line::from(vec![
-            Span::styled(
-                "Tab switch fields",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]);
-        f.render_widget(Paragraph::new(footer), rows[4]);
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "Tab · next field      Enter · download      Esc · cancel",
+                Style::default().fg(theme::MUTED),
+            )),
+            rows[4],
+        );
     }
 
     fn render_middle_columns(&self, f: &mut ratatui::Frame, area: Rect) {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(60), // Library
-                Constraint::Percentage(40), // Playlist/queue
-            ])
+            .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
+            .spacing(1)
             .split(area);
 
-        // Library pane
-        let lib_focused = self.focus == Focus::Library;
-        let lib_border = if lib_focused {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+        self.render_library_pane(f, cols[0]);
+        self.render_queue_pane(f, cols[1]);
+    }
 
-        let lib_title = if !self.search_query.is_empty() {
-            format!(" Library (Filter: {}) ", self.search_query)
-        } else {
+    fn render_library_pane(&self, f: &mut ratatui::Frame, area: Rect) {
+        let focused = self.focus == Focus::Library;
+        let title = if self.search_query.is_empty() {
             " Library ".to_string()
+        } else {
+            format!(" Library · “{}” ", truncate_str(&self.search_query, 20))
         };
+        let block = panel(title, focused);
 
-        let lib_block = Block::default()
-            .borders(Borders::ALL)
-            .title(lib_title)
-            .border_style(lib_border);
+        if self.filtered_indices.is_empty() {
+            let hint = if self.songs.is_empty() {
+                "No songs yet — run /add <url> to download one"
+            } else {
+                "No songs match your search"
+            };
+            f.render_widget(
+                Paragraph::new(hint)
+                    .style(Style::default().fg(theme::MUTED))
+                    .block(block),
+                area,
+            );
+            return;
+        }
 
         let items: Vec<ListItem> = self
             .filtered_indices
@@ -1325,94 +1347,106 @@ impl AppUi {
             .enumerate()
             .map(|(display_idx, &song_idx)| {
                 let song = &self.songs[song_idx];
-                let is_selected = display_idx == self.lib_selected && lib_focused;
-
-                let marker = if is_selected { "▶ " } else { "  " };
-
-                let style = if is_selected {
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-
-                let content = format!("{marker}{}", song.name);
-                ListItem::new(content).style(style)
+                let selected = display_idx == self.lib_selected && focused;
+                song_row(selected, &song.name, &song.formatted_size(), area.width)
             })
             .collect();
 
-        let list = List::new(items).block(lib_block);
-        f.render_widget(list, cols[0]);
+        let list = List::new(items).block(block);
+        let mut state = ListState::default();
+        *state.offset_mut() = scroll_offset(self.lib_selected, area.height as usize);
+        f.render_stateful_widget(list, area, &mut state);
+    }
 
-        // Playlist pane
-        let pl_focused = self.focus == Focus::Playlist;
-        let pl_border = if pl_focused {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
+    fn render_queue_pane(&self, f: &mut ratatui::Frame, area: Rect) {
+        let focused = self.focus == Focus::Playlist;
+        let count = self.player.as_ref().map(|p| p.queue.len()).unwrap_or(0);
+        let block = panel(format!(" Queue ({count}) "), focused);
+
+        let Some(player) = &self.player else {
+            f.render_widget(
+                Paragraph::new("No audio device available")
+                    .style(Style::default().fg(theme::RED))
+                    .block(block),
+                area,
+            );
+            return;
         };
 
-        let pl_block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Queue ")
-            .border_style(pl_border);
+        if player.queue.is_empty() {
+            f.render_widget(
+                Paragraph::new("Queue is empty — play a song to fill it")
+                    .style(Style::default().fg(theme::MUTED))
+                    .block(block),
+                area,
+            );
+            return;
+        }
 
-        let pl_items: Vec<ListItem> = match &self.player {
-            Some(player) => player
-                .queue
-                .iter()
-                .enumerate()
-                .map(|(idx, path)| {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    let is_current = player.current_song_index() == Some(idx);
-                    let is_selected = idx == self.playlist_selected && pl_focused;
+        let current_idx = player.current_song_index();
+        let items: Vec<ListItem> = player
+            .queue
+            .iter()
+            .enumerate()
+            .map(|(idx, path)| {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let is_current = current_idx == Some(idx);
+                let is_selected = idx == self.playlist_selected && focused;
 
-                    let prefix = if is_current { "▶ " } else { "  " };
-                    let num = format!("{}. ", idx + 1);
+                let marker = if is_current { "▶ " } else { "  " };
+                let num = format!("{:>2} ", idx + 1);
+                let name = truncate_str(&name, area.width.saturating_sub(8) as usize);
 
-                    let mut style = Style::default();
-                    if is_selected {
-                        style = style
-                            .fg(Color::Black)
-                            .bg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD);
-                    } else if is_current {
-                        style = style.fg(Color::Green).add_modifier(Modifier::BOLD);
-                    } else {
-                        style = style.fg(Color::White);
-                    }
+                let text_style = if is_selected {
+                    Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
+                } else if is_current {
+                    Style::default()
+                        .fg(theme::GREEN)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme::FG)
+                };
+                let item_style = if is_selected {
+                    Style::default().bg(theme::ACCENT)
+                } else {
+                    Style::default()
+                };
 
-                    ListItem::new(format!("{prefix}{num}{name}")).style(style)
-                })
-                .collect(),
-            None => vec![ListItem::new("No audio device available")],
-        };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!(" {marker}{num}"), text_style),
+                    Span::styled(name, text_style),
+                ]))
+                .style(item_style)
+            })
+            .collect();
 
-        let pl_list = List::new(pl_items).block(pl_block);
-        f.render_widget(pl_list, cols[1]);
+        let list = List::new(items).block(block);
+        let mut state = ListState::default();
+        *state.offset_mut() = scroll_offset(self.playlist_selected, area.height as usize);
+        f.render_stateful_widget(list, area, &mut state);
     }
 
     fn render_player_bar(&self, f: &mut ratatui::Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Now playing ")
-            .border_style(Style::default().fg(Color::Cyan));
-
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme::BORDER))
+            .style(Style::default().bg(theme::SURFACE));
         f.render_widget(block, area);
 
         let inner = area.inner(ratatui::layout::Margin {
             vertical: 1,
-            horizontal: 1,
+            horizontal: 2,
         });
 
         let Some(player) = &self.player else {
             f.render_widget(
-                Paragraph::new("Audio output disabled (no sound card found)")
-                    .style(Style::default().fg(Color::Red)),
+                Paragraph::new("No audio device found — playback unavailable")
+                    .style(Style::default().fg(theme::RED)),
                 inner,
             );
             return;
@@ -1421,83 +1455,99 @@ impl AppUi {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(3),      // Play/pause icon
-                Constraint::Percentage(35), // Song name
-                Constraint::Percentage(45), // Seek bar
-                Constraint::Length(12),     // Time
-                Constraint::Length(8),      // Indicators (shuffle/repeat)
+                Constraint::Length(3),      // play/pause
+                Constraint::Length(1),      // gap
+                Constraint::Percentage(26), // title
+                Constraint::Min(8),         // progress bar
+                Constraint::Length(1),      // gap
+                Constraint::Length(13),     // time
+                Constraint::Length(1),      // gap
+                Constraint::Length(5),      // shuffle / repeat
             ])
             .split(inner);
 
-        // Play/Pause icon
         let icon = if player.is_paused() {
-            "⏸"
+            "‖"
         } else if player.is_started {
             "▶"
         } else {
-            "⏹"
+            "■"
         };
         f.render_widget(
             Paragraph::new(icon).style(
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD),
             ),
             chunks[0],
         );
 
-        // Song title
-        let current_title = player
+        let title = player
             .current_file
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "No track playing".to_string());
+            .unwrap_or_else(|| "Nothing playing".to_string());
         f.render_widget(
-            Paragraph::new(truncate_str(&current_title, 30)).style(
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            chunks[1],
+            Paragraph::new(truncate_str(&title, chunks[2].width as usize))
+                .style(Style::default().fg(theme::FG).add_modifier(Modifier::BOLD)),
+            chunks[2],
         );
 
-        // Seek gauge
-        let ratio = player.progress_ratio();
-        let gauge = Gauge::default()
-            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
-            .ratio(ratio);
-        f.render_widget(gauge, chunks[2]);
-
-        // Time
-        let time_str = player.progress_str();
         f.render_widget(
-            Paragraph::new(time_str)
-                .alignment(Alignment::Right)
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(Line::from(progress_bar(
+                player.progress_ratio(),
+                chunks[3].width,
+            ))),
             chunks[3],
         );
 
-        // Shuffle / Repeat icons
-        let rep_str = if player.repeat_one { "🔂" } else { "  " };
-        let shf_str = if player.shuffle { "🔀" } else { "  " };
-        f.render_widget(Paragraph::new(format!("{rep_str} {shf_str}")), chunks[4]);
+        f.render_widget(
+            Paragraph::new(player.progress_str())
+                .alignment(Alignment::Right)
+                .style(Style::default().fg(theme::MUTED)),
+            chunks[5],
+        );
+
+        let shf_style = if player.shuffle {
+            Style::default()
+                .fg(theme::GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::MUTED)
+        };
+        let rep_style = if player.repeat_one {
+            Style::default()
+                .fg(theme::GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::MUTED)
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("⇆", shf_style),
+                Span::raw(" "),
+                Span::styled("↻", rep_style),
+            ]))
+            .alignment(Alignment::Right),
+            chunks[7],
+        );
     }
 
     fn render_bottom_status(&self, f: &mut ratatui::Frame, area: Rect) {
-        let mut spans = Vec::new();
+        let mut spans: Vec<Span> = Vec::new();
 
         if let Some((msg, _)) = &self.status_message {
             spans.push(Span::styled(
                 format!(" {msg} "),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme::YELLOW),
             ));
         } else if let Ok(guard) = UPDATE_NOTICE.lock() {
             if let Some(notice) = guard.as_ref() {
                 spans.push(Span::styled(
                     format!(" ★ {notice} "),
                     Style::default()
-                        .fg(Color::Magenta)
+                        .fg(theme::MAGENTA)
                         .add_modifier(Modifier::BOLD),
                 ));
             }
@@ -1510,25 +1560,30 @@ impl AppUi {
             .any(|j| j.status == Status::Error && j.message.contains("Sign in"))
         {
             spans.push(Span::styled(
-                " [Sign-in needed: press 'o' to open YouTube in browser] ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                " [Sign in needed: press o to open YouTube] ",
+                Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
             ));
         }
 
         if spans.is_empty() {
             spans.push(Span::styled(
                 " Tab pane · space pause · / commands · ? help ",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::MUTED),
             ));
         }
 
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::SURFACE)),
+            area,
+        );
     }
 
     fn render_command_palette(&self, f: &mut ratatui::Frame, area: Rect) {
         let matching = matching_commands(&self.command_input);
         let count = matching.len().max(1);
-        let height = ((count as u16) + 4).min(12).min(area.height.saturating_sub(4));
+        let height = ((count as u16) + 4)
+            .min(12)
+            .min(area.height.saturating_sub(4));
         let width = 74.min(area.width.saturating_sub(4));
 
         let popup = Rect {
@@ -1537,12 +1592,18 @@ impl AppUi {
             width,
             height,
         };
-        f.render_widget(Clear, popup);
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Command Palette ")
-            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            .border_type(BorderType::Rounded)
+            .title(" Command ")
+            .title_style(
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(theme::ACCENT))
+            .style(Style::default().bg(theme::SURFACE));
         f.render_widget(block, popup);
 
         let inner = popup.inner(ratatui::layout::Margin {
@@ -1563,26 +1624,22 @@ impl AppUi {
             .command_input
             .strip_prefix('/')
             .unwrap_or(&self.command_input);
-        let input_text = format!("> /{clean}_");
         f.render_widget(
-            Paragraph::new(input_text).style(
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Paragraph::new(format!(" /{clean}"))
+                .style(Style::default().fg(theme::FG).add_modifier(Modifier::BOLD)),
             chunks[0],
         );
 
-        let sep: String = "─".repeat(chunks[1].width as usize);
+        let sep = "─".repeat(chunks[1].width as usize);
         f.render_widget(
-            Paragraph::new(sep).style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(sep).style(Style::default().fg(theme::BORDER)),
             chunks[1],
         );
 
         let items: Vec<ListItem> = if matching.is_empty() {
             vec![ListItem::new(Span::styled(
-                format!("  No matching commands for \"/{clean}\" (use /search to filter)"),
-                Style::default().fg(Color::DarkGray),
+                format!("  No matching commands for \"/{clean}\""),
+                Style::default().fg(theme::MUTED),
             ))]
         } else {
             matching
@@ -1597,25 +1654,30 @@ impl AppUi {
                         format!("{marker}{} {} ", item.cmd, item.args)
                     };
 
-                    let (cmd_style, desc_style, bg_style) = if is_selected {
+                    let (cmd_style, desc_style) = if is_selected {
                         (
-                            Style::default().fg(Color::Black).add_modifier(Modifier::BOLD),
-                            Style::default().fg(Color::Black),
-                            Style::default().bg(Color::Yellow).fg(Color::Black),
+                            Style::default().fg(theme::BG).add_modifier(Modifier::BOLD),
+                            Style::default().fg(theme::BG),
                         )
                     } else {
                         (
-                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                            Style::default().fg(Color::DarkGray),
-                            Style::default(),
+                            Style::default()
+                                .fg(theme::ACCENT)
+                                .add_modifier(Modifier::BOLD),
+                            Style::default().fg(theme::MUTED),
                         )
+                    };
+                    let item_style = if is_selected {
+                        Style::default().bg(theme::ACCENT)
+                    } else {
+                        Style::default()
                     };
 
                     let line = Line::from(vec![
                         Span::styled(cmd_text, cmd_style),
                         Span::styled(item.desc, desc_style),
                     ]);
-                    ListItem::new(line).style(bg_style)
+                    ListItem::new(line).style(item_style)
                 })
                 .collect()
         };
@@ -1629,26 +1691,27 @@ impl AppUi {
 
     fn settings_line(&self, row: SettingsRow, label: &str, value: String) -> ListItem<'static> {
         let selected = self.settings.selected == row;
-        let marker = if selected { "> " } else { "  " };
+        let marker = if selected { "▶ " } else { "  " };
         let text = if row == SettingsRow::Dir && self.settings.editing_dir {
-            format!("{marker}{label}: {}_", self.settings.dir_buf)
+            format!("{marker}{label}: {}", self.settings.dir_buf)
         } else {
             format!("{marker}{label}: {value}")
         };
-        let style = if selected {
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
+        let fg = if selected {
+            Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(theme::FG)
         };
-        ListItem::new(text).style(style)
+        let bg = if selected {
+            Style::default().bg(theme::ACCENT)
+        } else {
+            Style::default()
+        };
+        ListItem::new(Span::styled(text, fg)).style(bg)
     }
 
     fn render_settings(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(72, 55, area);
-        f.render_widget(Clear, popup);
 
         let rows = vec![
             self.settings_line(SettingsRow::Dir, "Library folder", self.dir_display()),
@@ -1674,8 +1737,15 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(" Settings ")
-            .border_style(Style::default().fg(Color::Yellow));
+            .title_style(
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(theme::ACCENT))
+            .style(Style::default().bg(theme::SURFACE));
         f.render_widget(block, popup);
 
         let inner = popup.inner(ratatui::layout::Margin {
@@ -1688,19 +1758,27 @@ impl AppUi {
             .split(inner);
         f.render_widget(List::new(rows), chunks[0]);
         f.render_widget(
-            Paragraph::new(" Tab field ")
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(Span::styled(
+                "Enter · edit / cycle      ← → · change value      Esc · close",
+                Style::default().fg(theme::MUTED),
+            )),
             chunks[1],
         );
     }
 
     fn render_help(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(72, 85, area);
-        f.render_widget(Clear, popup);
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(" Help ")
-            .border_style(Style::default().fg(Color::Cyan));
+            .title_style(
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(theme::ACCENT))
+            .style(Style::default().bg(theme::SURFACE));
         let text = "\n\
         Navigation\n\
         \n\
@@ -1735,17 +1813,17 @@ impl AppUi {
 
     fn render_prompt(&self, f: &mut ratatui::Frame, prompt: &PromptType, area: Rect) {
         let popup_area = centered_rect(60, 20, area);
-        f.render_widget(Clear, popup_area);
 
         match prompt {
             PromptType::Delete(name) => {
                 let block = Block::default()
                     .borders(Borders::ALL)
-                    .title(" Confirm Delete ")
-                    .border_style(Style::default().fg(Color::Red));
-                let text = format!(
-                    "\n  Delete '{name}'?\n\n  [y] confirm, [n] cancel"
-                );
+                    .border_type(BorderType::Rounded)
+                    .title(" Delete ")
+                    .title_style(Style::default().fg(theme::RED).add_modifier(Modifier::BOLD))
+                    .border_style(Style::default().fg(theme::RED))
+                    .style(Style::default().bg(theme::SURFACE));
+                let text = format!("\n  Delete “{name}”?\n\n  [y] confirm    [n] cancel");
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
             }
@@ -1815,9 +1893,9 @@ fn volume_bar(volume: f32) -> String {
     let v = volume.clamp(0.0, 1.0);
     let filled = (v * 10.0).round() as usize;
     let bar: String = (0..10)
-        .map(|i| if i < filled { '=' } else { '-' })
+        .map(|i| if i < filled { '█' } else { '░' })
         .collect();
-    format!("[{bar}] {}%", (v * 100.0).round() as i32)
+    format!("{bar} {:>3}%", (v * 100.0).round() as i32)
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
@@ -1827,6 +1905,133 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// A rounded, themed panel with an accent border when focused.
+fn panel(title: String, focused: bool) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title)
+        .title_style(
+            Style::default()
+                .fg(if focused { theme::ACCENT } else { theme::MUTED })
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(Style::default().fg(if focused {
+            theme::ACCENT
+        } else {
+            theme::BORDER
+        }))
+        .style(Style::default().bg(theme::SURFACE))
+}
+
+/// A filled/unfilled progress bar with a knob, as styled spans.
+fn progress_bar(ratio: f64, width: u16) -> Vec<Span<'static>> {
+    let ratio = ratio.clamp(0.0, 1.0);
+    let width = width as usize;
+    if width == 0 {
+        return Vec::new();
+    }
+    let cells = width.saturating_sub(1);
+    let filled = ((ratio * cells as f64).round() as usize).min(cells);
+
+    let mut spans: Vec<Span> = Vec::new();
+    if filled > 0 {
+        spans.push(Span::styled(
+            "█".repeat(filled),
+            Style::default().fg(theme::ACCENT),
+        ));
+    }
+    spans.push(Span::styled("●", Style::default().fg(theme::FG)));
+    let empty = cells.saturating_sub(filled);
+    if empty > 0 {
+        spans.push(Span::styled(
+            "░".repeat(empty),
+            Style::default().fg(theme::MUTED),
+        ));
+    }
+    spans
+}
+
+/// Keep the selected row visible: offset so `selected` sits within `visible` rows.
+fn scroll_offset(selected: usize, visible: usize) -> usize {
+    let visible = visible.saturating_sub(1).max(1);
+    selected.saturating_sub(visible)
+}
+
+/// A form-field label, accent and arrowed when focused.
+fn field_label(name: &str, focused: bool) -> Span<'static> {
+    let text = if focused {
+        format!("▶ {name:<5}")
+    } else {
+        format!("  {name:<5}")
+    };
+    Span::styled(
+        text,
+        if focused {
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::MUTED)
+        },
+    )
+}
+
+/// A form-field value: a dim placeholder when empty, underlined while focused.
+fn field_value(value: &str, placeholder: &str, focused: bool) -> Span<'static> {
+    if value.is_empty() {
+        Span::styled(
+            placeholder.to_string(),
+            Style::default()
+                .fg(theme::MUTED)
+                .add_modifier(Modifier::DIM),
+        )
+    } else if focused {
+        Span::styled(
+            value.to_string(),
+            Style::default()
+                .fg(theme::FG)
+                .add_modifier(Modifier::UNDERLINED),
+        )
+    } else {
+        Span::styled(value.to_string(), Style::default().fg(theme::FG))
+    }
+}
+
+/// A library row: name on the left, size right-aligned, full-width highlight.
+fn song_row(selected: bool, name: &str, size: &str, width: u16) -> ListItem<'static> {
+    let inner = width.saturating_sub(4) as usize; // borders + one margin each side
+    let marker = if selected { "▶ " } else { "  " };
+    let size_label = format!(" {} ", size);
+
+    let content_w = inner.saturating_sub(size_label.chars().count());
+    let name_trunc = truncate_str(name, content_w);
+    let pad = content_w.saturating_sub(name_trunc.chars().count());
+
+    let text_style = if selected {
+        Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme::FG)
+    };
+    let size_style = if selected {
+        Style::default().fg(theme::BG)
+    } else {
+        Style::default().fg(theme::MUTED)
+    };
+    let item_style = if selected {
+        Style::default().bg(theme::ACCENT)
+    } else {
+        Style::default()
+    };
+
+    ListItem::new(Line::from(vec![
+        Span::styled(format!(" {marker}{name_trunc}"), text_style),
+        Span::raw(" ".repeat(pad)),
+        Span::styled(size_label, size_style),
+    ]))
+    .style(item_style)
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
