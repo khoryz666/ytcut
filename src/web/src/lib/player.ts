@@ -4,9 +4,6 @@
  */
 import { derived, get, writable } from 'svelte/store';
 
-/** Times a song is reloaded after an error before giving up on it. */
-const MAX_RETRIES = 2;
-
 export const queue = writable<string[]>([]);
 export const pos = writable(0);
 export const playing = writable(false);
@@ -23,7 +20,6 @@ export const queued = derived(queue, ($queue) => new Set($queue));
 let audio: HTMLAudioElement | undefined;
 let video: HTMLVideoElement | undefined;
 let media: HTMLMediaElement | undefined;
-let retries = 0;
 let failures = 0;
 
 /** Connect the media elements once the player component is mounted. */
@@ -45,7 +41,6 @@ export function attach(a: HTMLAudioElement, v: HTMLVideoElement) {
     listen(element, 'ended', next);
     listen(element, 'playing', () => {
       failures = 0;
-      retries = 0;
       message.set('');
     });
     listen(element, 'error', failed);
@@ -184,7 +179,6 @@ export function setVideo(show: boolean) {
 /** Jump to a row in the playlist. */
 export function playAt(i: number, at = 0) {
   pos.set(i);
-  retries = 0;
   load(at);
 }
 
@@ -192,24 +186,19 @@ export function playAt(i: number, at = 0) {
 function load(at: number, play = true) {
   const name = get(current);
   if (!media || !name) return;
+  // Reset first, or a reload of the same file after an error is a no-op.
+  media.removeAttribute('src');
+  media.load();
   media.src = '/media/' + encodeURIComponent(name);
   media.currentTime = at;
   if (play) media.play().catch(() => {});
 }
 
-/** A song failed to load: retry it a couple of times, then report it and move on. */
+/** A song failed to load: report it, and skip ahead when there are more songs. */
 function failed() {
   const name = get(current);
   if (!name || !media) return;
   console.warn('ytcut: playback error', name, media.error?.code, media.error?.message);
-  if (retries < MAX_RETRIES) {
-    retries++;
-    const at = media.currentTime;
-    setTimeout(() => {
-      if (get(current) === name) load(at);
-    }, 400 * retries);
-    return;
-  }
   message.set("Can't play this file");
   // Skip to the next song, but stop once every song in the loop has failed.
   if (get(queue).length > 1 && ++failures < get(queue).length) {
