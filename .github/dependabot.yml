@@ -1,9 +1,13 @@
 version: 2
 updates:
+  # Only bump within Cargo.toml's existing version ranges (non-breaking patches),
+  # which CI verifies and the auto-merge workflow ships. Major/minor upgrades
+  # change APIs and need manual code changes, so they are left out of this.
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: monthly
+    versioning-strategy: lockfile-only
     open-pull-requests-limit: 10
   - package-ecosystem: github-actions
     directory: /
