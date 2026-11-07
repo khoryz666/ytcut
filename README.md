@@ -53,11 +53,24 @@ This needs a Chromium-based browser: Chrome, Chromium, Brave, Edge or Vivaldi. W
 
 ## Develop
 
+You need [Rust](https://rustup.rs) (stable) and [Node.js](https://nodejs.org) 22+ with npm. `nix develop` provides both if you use Nix; otherwise install them directly.
+
+To run the app the way a user would:
+
 ```sh
-nix develop
-cargo run -- --no-window ~/Music    # terminal 1
-npm --prefix src/web run dev        # terminal 2, then open http://localhost:5173
+cargo run    # builds the page, then opens ytcut in a browser window
 ```
+
+`cargo run` builds and type-checks the page first, installing its npm packages the first time. The first download fetches yt-dlp, ffmpeg and Deno, just like a first install.
+
+To work on the page with live reload, run the server and Vite side by side:
+
+```sh
+cargo run -- --no-window ~/Music    # terminal 1: the server, no window
+npm --prefix src/web run dev        # terminal 2: Vite, then open http://localhost:5173
+```
+
+`~/Music` is the folder videos are saved to; pass any folder. Vite proxies the API and media paths to the server on port 8765.
 
 Run these before a commit:
 
@@ -65,7 +78,7 @@ Run these before a commit:
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-`cargo` builds and type-checks the page first. Debug builds do not update themselves.
+Debug builds do not update themselves.
 
 | Path | What it holds |
 |---|---|
