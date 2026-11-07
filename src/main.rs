@@ -216,7 +216,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            let mut player = Player::new()?;
+            let mut player = Player::new(config.output_device.as_deref())?;
             player.set_queue(paths);
             if shuffle {
                 player.toggle_shuffle();

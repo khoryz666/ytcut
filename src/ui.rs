@@ -47,6 +47,7 @@ pub enum AddField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsRow {
     Dir,
+    Device,
     Browser,
     Autoupdate,
     Volume,
@@ -55,7 +56,8 @@ enum SettingsRow {
 impl SettingsRow {
     fn next(self) -> Self {
         match self {
-            SettingsRow::Dir => SettingsRow::Browser,
+            SettingsRow::Dir => SettingsRow::Device,
+            SettingsRow::Device => SettingsRow::Browser,
             SettingsRow::Browser => SettingsRow::Autoupdate,
             SettingsRow::Autoupdate => SettingsRow::Volume,
             SettingsRow::Volume => SettingsRow::Dir,
@@ -64,7 +66,8 @@ impl SettingsRow {
     fn prev(self) -> Self {
         match self {
             SettingsRow::Dir => SettingsRow::Volume,
-            SettingsRow::Browser => SettingsRow::Dir,
+            SettingsRow::Device => SettingsRow::Dir,
+            SettingsRow::Browser => SettingsRow::Device,
             SettingsRow::Autoupdate => SettingsRow::Browser,
             SettingsRow::Volume => SettingsRow::Autoupdate,
         }
@@ -91,7 +94,6 @@ impl Default for SettingsState {
 #[derive(Clone, Debug)]
 pub enum PromptType {
     Delete(String),
-    Rename { old_name: String, input: String },
 }
 
 pub struct AppUi {
@@ -127,7 +129,7 @@ impl AppUi {
         config: Config,
         first_run: bool,
     ) -> Self {
-        let player = Player::try_new();
+        let player = Player::try_new(config.output_device.as_deref());
         if let Some(p) = &player {
             p.set_volume(config.volume());
         }
@@ -267,39 +269,6 @@ impl AppUi {
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     self.prompt = None;
                     self.focus = Focus::Library;
-                }
-                _ => {}
-            },
-            Some(PromptType::Rename { old_name, input }) => match code {
-                KeyCode::Esc => {
-                    self.prompt = None;
-                    self.focus = Focus::Library;
-                }
-                KeyCode::Enter => {
-                    let new_input = input.trim();
-                    if !new_input.is_empty() {
-                        match library::rename(&self.library_dir, old_name, new_input) {
-                            Ok(new_file) => {
-                                self.set_status(format!("Renamed to {new_file}"));
-                                self.refresh_songs();
-                            }
-                            Err(e) => {
-                                self.set_status(format!("Error: {e}"));
-                            }
-                        }
-                    }
-                    self.prompt = None;
-                    self.focus = Focus::Library;
-                }
-                KeyCode::Backspace => {
-                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
-                        input.pop();
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
-                        input.push(c);
-                    }
                 }
                 _ => {}
             },
@@ -525,17 +494,6 @@ impl AppUi {
                 if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
                     if let Some(song) = self.songs.get(idx) {
                         self.prompt = Some(PromptType::Delete(song.name.clone()));
-                        self.focus = Focus::Prompt;
-                    }
-                }
-            }
-            KeyCode::Char('R') => {
-                if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
-                    if let Some(song) = self.songs.get(idx) {
-                        self.prompt = Some(PromptType::Rename {
-                            old_name: song.name.clone(),
-                            input: song.name.clone(),
-                        });
                         self.focus = Focus::Prompt;
                     }
                 }
@@ -777,6 +735,22 @@ impl AppUi {
         self.save_config();
     }
 
+    fn cycle_output_device(&mut self) {
+        let names = crate::player::list_output_device_names();
+        let next = match &self.config.output_device {
+            None => names.first().cloned(),
+            Some(cur) => {
+                let i = names.iter().position(|n| n == cur);
+                match i {
+                    Some(i) if i + 1 < names.len() => Some(names[i + 1].clone()),
+                    _ => None,
+                }
+            }
+        };
+        self.config.output_device = next;
+        self.save_config();
+    }
+
     fn adjust_volume(&mut self, delta: f32) {
         let v = (self.config.volume() + delta).clamp(0.0, 1.0);
         self.config.volume = Some(v);
@@ -813,17 +787,20 @@ impl AppUi {
                         self.settings.dir_buf = self.library_dir.display().to_string();
                     }
                 }
+                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => {}
             },
             KeyCode::Char('h') | KeyCode::Left => match self.settings.selected {
+                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => self.adjust_volume(-0.05),
                 SettingsRow::Dir => {}
             },
             KeyCode::Char('l') | KeyCode::Right => match self.settings.selected {
+                SettingsRow::Device => self.cycle_output_device(),
                 SettingsRow::Browser => self.cycle_browser(),
                 SettingsRow::Autoupdate => self.cycle_autoupdate(),
                 SettingsRow::Volume => self.adjust_volume(0.05),
@@ -921,7 +898,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Add [a] ")
+            .title(" Add ")
             .border_style(border_style);
 
         f.render_widget(block, area);
@@ -1083,7 +1060,7 @@ impl AppUi {
         let lib_title = if !self.search_query.is_empty() {
             format!(" Library (Filter: {}) ", self.search_query)
         } else {
-            " Library [Enter: play, +: queue, /: cmd, ?: help] ".to_string()
+            " Library ".to_string()
         };
 
         let lib_block = Block::default()
@@ -1136,7 +1113,7 @@ impl AppUi {
 
         let pl_block = Block::default()
             .borders(Borders::ALL)
-            .title(" Playlist / Queue [d: remove] ")
+            .title(" Queue ")
             .border_style(pl_border);
 
         let pl_items: Vec<ListItem> = match &self.player {
@@ -1177,7 +1154,7 @@ impl AppUi {
     fn render_player_bar(&self, f: &mut ratatui::Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Player [space: play/pause, n/p: next/prev, s: shuffle, r: repeat] ")
+            .title(" Now playing ")
             .border_style(Style::default().fg(Color::Cyan));
 
         f.render_widget(block, area);
@@ -1295,7 +1272,7 @@ impl AppUi {
 
         if spans.is_empty() {
             spans.push(Span::styled(
-                " q: quit · Tab: pane · Enter: play · a: add · /: commands · ?: help · d: delete · R: rename ",
+                " Enter play · space pause · a add · / commands · ? help · q quit ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -1353,6 +1330,14 @@ impl AppUi {
         let rows = vec![
             self.settings_line(SettingsRow::Dir, "Library folder", self.dir_display()),
             self.settings_line(
+                SettingsRow::Device,
+                "Output device",
+                self.config
+                    .output_device
+                    .clone()
+                    .unwrap_or_else(|| "auto".into()),
+            ),
+            self.settings_line(
                 SettingsRow::Browser,
                 "Sign-in browser",
                 self.config.browser.clone().unwrap_or_else(|| "auto".into()),
@@ -1370,7 +1355,7 @@ impl AppUi {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Settings — ↑↓ select · Enter edit/cycle · ←→ adjust · Esc back ")
+            .title(" Settings ")
             .border_style(Style::default().fg(Color::Yellow));
         f.render_widget(List::new(rows).block(block), popup);
     }
@@ -1388,8 +1373,8 @@ impl AppUi {
           ↑/↓ or j/k    move selection        Tab        switch pane\n\
           Enter         play / confirm        a          add a song (URL)\n\
           +             add to queue          d          delete (confirm)\n\
-          R             rename                /          commands & search\n\
-          ?             this help             q / Esc    back / quit\n\
+          /             commands & search     ?          this help\n\
+          q / Esc       back / quit\n\
         \n\
         Playback\n\
         \n\
@@ -1399,7 +1384,7 @@ impl AppUi {
         \n\
         Commands (/)\n\
         \n\
-          settings      folder, browser, auto-update, volume\n\
+          settings      folder, device, browser, auto-update, volume\n\
           dir <path>    set the library folder\n\
           add <url>     download a song\n\
           update        check for updates now\n\
@@ -1445,16 +1430,6 @@ impl AppUi {
                 let text = format!(
                     "\n  Delete '{name}'?\n\n  Press [y] to confirm, [n] or [Esc] to cancel."
                 );
-                let p = Paragraph::new(text).block(block);
-                f.render_widget(p, popup_area);
-            }
-            PromptType::Rename { old_name, input } => {
-                let block = Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(" Rename '{old_name}' "))
-                    .border_style(Style::default().fg(Color::Yellow));
-                let text =
-                    format!("\n  New name: {input}_\n\n  Press [Enter] to save, [Esc] to cancel.");
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
             }

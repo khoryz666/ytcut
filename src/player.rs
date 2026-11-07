@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use rodio::cpal;
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::Player as AudioPlayer;
 use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Source};
 
@@ -51,11 +53,77 @@ fn silence_alsa() {
 #[cfg(not(target_os = "linux"))]
 fn silence_alsa() {}
 
+/// Open the output device: the preferred one if named, else the best available
+/// (preferring analog speakers over HDMI), falling back to the system default.
+fn open_sink(preferred_device: Option<&str>) -> Result<MixerDeviceSink> {
+    if let Some(device) = choose_output_device(preferred_device) {
+        if let Ok(sink) =
+            DeviceSinkBuilder::from_device(device).and_then(|b| b.open_sink_or_fallback())
+        {
+            return Ok(sink);
+        }
+    }
+    DeviceSinkBuilder::open_default_sink().context("no usable output device")
+}
+
+/// Pick an output device: an explicit name first, else the one most likely to be
+/// real speakers (analog / headphone / speaker) rather than HDMI or DisplayPort.
+fn choose_output_device(preferred: Option<&str>) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    let devices: Vec<cpal::Device> = host.output_devices().ok()?.collect();
+    if devices.is_empty() {
+        return host.default_output_device();
+    }
+    let name_of = |d: &cpal::Device| {
+        d.description()
+            .map(|desc| desc.name().to_string())
+            .unwrap_or_default()
+    };
+    let score = |name: &str| -> i32 {
+        let n = name.to_lowercase();
+        let mut s = 0;
+        if n.contains("analog")
+            || n.contains("speaker")
+            || n.contains("headphone")
+            || n.contains("built-in")
+        {
+            s += 10;
+        }
+        if n.contains("hdmi")
+            || n.contains("displayport")
+            || n.contains("optical")
+            || n.contains("null")
+        {
+            s -= 10;
+        }
+        s
+    };
+    if let Some(pref) = preferred {
+        let p = pref.to_lowercase();
+        if let Some(d) = devices
+            .iter()
+            .find(|d| name_of(d).to_lowercase().contains(&p))
+        {
+            return Some(d.clone());
+        }
+    }
+    devices.into_iter().max_by_key(|d| score(&name_of(d)))
+}
+
+/// Human-readable names of the available output devices, for the settings screen.
+pub fn list_output_device_names() -> Vec<String> {
+    let Ok(devices) = cpal::default_host().output_devices() else {
+        return Vec::new();
+    };
+    devices
+        .filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
+        .collect()
+}
+
 impl Player {
-    pub fn new() -> Result<Self> {
+    pub fn new(preferred_device: Option<&str>) -> Result<Self> {
         silence_alsa();
-        let sink = DeviceSinkBuilder::open_default_sink()
-            .context("failed to open default audio output device")?;
+        let sink = open_sink(preferred_device).context("failed to open audio output device")?;
         let player = AudioPlayer::connect_new(sink.mixer());
         Ok(Self {
             _sink: sink,
@@ -72,8 +140,8 @@ impl Player {
     }
 
     /// Try creating a player, or return None if no audio device is available.
-    pub fn try_new() -> Option<Self> {
-        Self::new().ok()
+    pub fn try_new(preferred_device: Option<&str>) -> Option<Self> {
+        Self::new(preferred_device).ok()
     }
 
     pub fn set_queue(&mut self, queue: Vec<PathBuf>) {

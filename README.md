@@ -40,7 +40,7 @@ Run `ytcut` with no arguments to open the terminal interface. On the first run i
 | `s` / `r` | shuffle, repeat-one |
 | `/` | commands & search (`/settings`, `/dir <path>`, `/add <url>`, `/update`, `/help`, `/quit`) |
 | `?` | full help |
-| `d` / `R` | delete / rename the selected song |
+| `d` | delete the selected song |
 | `q` / `Esc` | back / quit |
 
 To keep only part of a song, type the **Start** and **End** times (like `1:30`) in the Add pane before downloading. Songs are saved as audio (`.m4a`); existing files are never overwritten.
@@ -57,7 +57,7 @@ ytcut rm <NAME>                                            # delete
 ytcut update [VERSION]                                     # update yt-dlp + self
 ```
 
-The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`.
+The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`. The settings screen also lets you pick the output device (ytcut prefers your speakers automatically), the sign-in browser, auto-update and volume.
 
 ## Updates
 
