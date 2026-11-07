@@ -109,4 +109,4 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 Set the version in `Cargo.toml` and `flake.nix`, then push a tag with the same version, like `v0.3.0`. [`release.yml`](.github/workflows/release.yml) builds both binaries and publishes them; running copies pick them up on their next start.
 
-Dependencies update themselves monthly via [Dependabot](.github/dependabot.yml): it opens pull requests for the Rust crates and GitHub Actions, [CI](.github/workflows/ci.yml) checks them, and passing updates are merged automatically. Cutting a release is still manual — bump the version in `Cargo.toml` and `flake.nix`, then push a tag.
+Dependencies update themselves monthly via [Dependabot](.github/dependabot.yml): it opens pull requests for the Rust crates and GitHub Actions, [CI](.github/workflows/ci.yml) checks them, and passing updates are merged automatically. [`auto-release.yml`](.github/workflows/auto-release.yml) then tags the changes and ships a new release each month, so no manual step is needed. To ship a feature yourself, bump the version in `Cargo.toml` and `flake.nix` and push a tag.
