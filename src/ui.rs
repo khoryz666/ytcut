@@ -90,6 +90,7 @@ impl Default for SettingsState {
 #[derive(Clone, Debug)]
 pub enum PromptType {
     Delete(String),
+    Rename { old_name: String, input: String },
 }
 
 pub struct AppUi {
@@ -276,6 +277,39 @@ impl AppUi {
                 }
                 _ => {}
             },
+            Some(PromptType::Rename { old_name, input }) => match code {
+                KeyCode::Esc => {
+                    self.prompt = None;
+                    self.focus = Focus::Library;
+                }
+                KeyCode::Enter => {
+                    let new_input = input.trim();
+                    if !new_input.is_empty() {
+                        match library::rename(&self.library_dir, old_name, new_input) {
+                            Ok(new_file) => {
+                                self.set_status(format!("Renamed to {new_file}"));
+                                self.refresh_songs();
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Error: {e}"));
+                            }
+                        }
+                    }
+                    self.prompt = None;
+                    self.focus = Focus::Library;
+                }
+                KeyCode::Backspace => {
+                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
+                        input.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(PromptType::Rename { input, .. }) = &mut self.prompt {
+                        input.push(c);
+                    }
+                }
+                _ => {}
+            },
             None => {
                 self.focus = Focus::Library;
             }
@@ -335,9 +369,9 @@ impl AppUi {
             }
             "add" => {
                 if rest.is_empty() {
-                    self.set_status("Usage: /add <url>");
+                    self.set_status("Usage: /add <url> [--name <name>] [--start <s>] [--end <e>]");
                 } else {
-                    self.start_download(rest.to_string());
+                    self.parse_and_start_download(rest);
                 }
                 self.focus = Focus::Library;
             }
@@ -365,7 +399,7 @@ impl AppUi {
             KeyCode::Esc => {
                 self.focus = Focus::Library;
             }
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Down => {
                 self.add_field = match self.add_field {
                     AddField::Url => AddField::Name,
                     AddField::Name => AddField::Start,
@@ -373,7 +407,7 @@ impl AppUi {
                     AddField::End => AddField::Url,
                 };
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Up => {
                 self.add_field = match self.add_field {
                     AddField::Url => AddField::End,
                     AddField::Name => AddField::Url,
@@ -414,6 +448,65 @@ impl AppUi {
             },
             _ => {}
         }
+    }
+
+    fn parse_and_start_download(&mut self, rest: &str) {
+        let parts = shlex_split(rest);
+        if parts.is_empty() {
+            self.set_status("Enter a URL first.");
+            return;
+        }
+        let url = parts[0].clone();
+        let mut name = String::new();
+        let mut start = String::new();
+        let mut end = String::new();
+
+        let mut i = 1;
+        while i < parts.len() {
+            match parts[i].as_str() {
+                "--name" | "-n" => {
+                    if i + 1 < parts.len() {
+                        name = parts[i + 1].clone();
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                "--start" | "-s" => {
+                    if i + 1 < parts.len() {
+                        start = parts[i + 1].clone();
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                "--end" | "-e" => {
+                    if i + 1 < parts.len() {
+                        end = parts[i + 1].clone();
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                pos if !pos.starts_with('-') => {
+                    if name.is_empty() {
+                        name = pos.to_string();
+                    } else if start.is_empty() {
+                        start = pos.to_string();
+                    } else if end.is_empty() {
+                        end = pos.to_string();
+                    }
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+        self.add_url = url;
+        self.add_name = name;
+        self.add_start = start;
+        self.add_end = end;
+        let url = self.add_url.clone();
+        self.start_download(url);
     }
 
     fn trigger_download(&mut self) {
@@ -498,6 +591,21 @@ impl AppUi {
                 if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
                     if let Some(song) = self.songs.get(idx) {
                         self.prompt = Some(PromptType::Delete(song.name.clone()));
+                        self.focus = Focus::Prompt;
+                    }
+                }
+            }
+            KeyCode::Char('R') => {
+                if let Some(&idx) = self.filtered_indices.get(self.lib_selected) {
+                    if let Some(song) = self.songs.get(idx) {
+                        let stem = std::path::Path::new(&song.name)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| song.name.clone());
+                        self.prompt = Some(PromptType::Rename {
+                            old_name: song.name.clone(),
+                            input: stem,
+                        });
                         self.focus = Focus::Prompt;
                     }
                 }
@@ -852,9 +960,15 @@ impl AppUi {
             Style::default().fg(Color::DarkGray)
         };
 
+        let title = if is_focused {
+            " Add [Tab: next field · Enter: download · Esc: cancel] "
+        } else {
+            " Add [a] "
+        };
+
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Add ")
+            .title(title)
             .border_style(border_style);
 
         f.render_widget(block, area);
@@ -873,7 +987,7 @@ impl AppUi {
             .split(inner);
 
         // Inputs line: URL [name] [start-end]
-        let mut spans = vec![
+        let spans = vec![
             Span::styled("URL: ", Style::default().fg(Color::Cyan)),
             Span::styled(
                 if self.add_url.is_empty()
@@ -888,19 +1002,23 @@ impl AppUi {
                 },
                 if is_focused && self.add_field == AddField::Url {
                     Style::default()
-                        .fg(Color::White)
+                        .fg(Color::Yellow)
                         .add_modifier(Modifier::UNDERLINED)
+                } else if self.add_url.is_empty() {
+                    Style::default().fg(Color::DarkGray)
                 } else {
                     Style::default().fg(Color::White)
                 },
             ),
-        ];
-
-        if !self.add_name.is_empty() || (is_focused && self.add_field == AddField::Name) {
-            spans.push(Span::raw("  Name: "));
-            spans.push(Span::styled(
-                if self.add_name.is_empty() {
-                    "_"
+            Span::raw("  Name: "),
+            Span::styled(
+                if self.add_name.is_empty()
+                    && self.focus == Focus::Add
+                    && self.add_field == AddField::Name
+                {
+                    " "
+                } else if self.add_name.is_empty() {
+                    "<optional>"
                 } else {
                     &self.add_name
                 },
@@ -908,20 +1026,20 @@ impl AppUi {
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::UNDERLINED)
+                } else if self.add_name.is_empty() {
+                    Style::default().fg(Color::DarkGray)
                 } else {
                     Style::default().fg(Color::White)
                 },
-            ));
-        }
-
-        if !self.add_start.is_empty()
-            || !self.add_end.is_empty()
-            || (is_focused
-                && (self.add_field == AddField::Start || self.add_field == AddField::End))
-        {
-            spans.push(Span::raw("  Cut: "));
-            spans.push(Span::styled(
-                if self.add_start.is_empty() {
+            ),
+            Span::raw("  Cut: "),
+            Span::styled(
+                if self.add_start.is_empty()
+                    && self.focus == Focus::Add
+                    && self.add_field == AddField::Start
+                {
+                    " "
+                } else if self.add_start.is_empty() {
                     "0"
                 } else {
                     &self.add_start
@@ -930,13 +1048,20 @@ impl AppUi {
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::UNDERLINED)
+                } else if self.add_start.is_empty() {
+                    Style::default().fg(Color::DarkGray)
                 } else {
                     Style::default().fg(Color::White)
                 },
-            ));
-            spans.push(Span::raw("-"));
-            spans.push(Span::styled(
-                if self.add_end.is_empty() {
+            ),
+            Span::raw("-"),
+            Span::styled(
+                if self.add_end.is_empty()
+                    && self.focus == Focus::Add
+                    && self.add_field == AddField::End
+                {
+                    " "
+                } else if self.add_end.is_empty() {
                     "end"
                 } else {
                     &self.add_end
@@ -945,11 +1070,13 @@ impl AppUi {
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::UNDERLINED)
+                } else if self.add_end.is_empty() {
+                    Style::default().fg(Color::DarkGray)
                 } else {
                     Style::default().fg(Color::White)
                 },
-            ));
-        }
+            ),
+        ];
 
         f.render_widget(Paragraph::new(Line::from(spans)), cols[0]);
 
@@ -1228,7 +1355,7 @@ impl AppUi {
 
         if spans.is_empty() {
             spans.push(Span::styled(
-                " Enter play · space pause · a add · / commands · ? help · q quit ",
+                " Enter play · space pause · a add · R rename · / commands · ? help · q quit ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -1339,8 +1466,8 @@ impl AppUi {
           ↑/↓ or j/k    move selection        Tab        switch pane\n\
           Enter         play / confirm        a          add a song (URL)\n\
           +             add to queue          d          delete (confirm)\n\
-          /             commands & search     ?          this help\n\
-          q / Esc       back / quit\n\
+          R             rename song           /          commands & search\n\
+          ?             this help             q / Esc    back / quit\n\
         \n\
         Playback\n\
         \n\
@@ -1352,7 +1479,7 @@ impl AppUi {
         \n\
           settings      folder, device, browser, auto-update, volume\n\
           dir <path>    set the library folder\n\
-          add <url>     download a song\n\
+          add <args>    download a song (e.g. /add <url> [--name <name>] [--start <s>] [--end <e>])\n\
           update        check for updates now\n\
           quit          exit\n\
         ";
@@ -1372,6 +1499,16 @@ impl AppUi {
                 let text = format!(
                     "\n  Delete '{name}'?\n\n  Press [y] to confirm, [n] or [Esc] to cancel."
                 );
+                let p = Paragraph::new(text).block(block);
+                f.render_widget(p, popup_area);
+            }
+            PromptType::Rename { old_name, input } => {
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" Rename '{old_name}' "))
+                    .border_style(Style::default().fg(Color::Yellow));
+                let text =
+                    format!("\n  New name: {input}_\n\n  Press [Enter] to save, [Esc] to cancel.");
                 let p = Paragraph::new(text).block(block);
                 f.render_widget(p, popup_area);
             }
@@ -1491,4 +1628,63 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn shlex_split(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quote: Option<char> = None;
+    let mut escape = false;
+
+    for c in input.chars() {
+        if escape {
+            current.push(c);
+            escape = false;
+        } else if c == '\\' {
+            escape = true;
+        } else if let Some(q) = in_quote {
+            if c == q {
+                in_quote = None;
+            } else {
+                current.push(c);
+            }
+        } else if c == '"' || c == '\'' {
+            in_quote = Some(c);
+        } else if c.is_whitespace() {
+            if !current.is_empty() {
+                args.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shlex_split_handles_quotes_and_flags() {
+        assert_eq!(
+            shlex_split("https://youtu.be/xyz --name \"My Song\" --start 1:00 --end 2:00"),
+            vec![
+                "https://youtu.be/xyz",
+                "--name",
+                "My Song",
+                "--start",
+                "1:00",
+                "--end",
+                "2:00"
+            ]
+        );
+        assert_eq!(
+            shlex_split("https://youtu.be/xyz 'song name' 10 20"),
+            vec!["https://youtu.be/xyz", "song name", "10", "20"]
+        );
+    }
 }
