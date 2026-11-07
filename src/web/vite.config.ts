@@ -3,7 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 /** Ask the Rust server for every API and media path while the page runs on Vite. */
 const backend = 'http://127.0.0.1:8765';
-const paths = ['alive', 'jobs', 'files', 'info', 'download', 'rename', 'delete', 'media'];
+const paths = ['alive', 'bye', 'jobs', 'files', 'info', 'download', 'rename', 'delete', 'media'];
 const proxy: Record<string, ProxyOptions> = Object.fromEntries(
   paths.map((path) => [
     `/${path}`,

@@ -94,7 +94,7 @@ export function updateQueue(name: string, newName?: string) {
   if (!newName) return remove(name);
   names[i] = newName;
   queue.set(names);
-  if (i === get(pos)) load(get(time));
+  if (i === get(pos)) load(get(time), !media?.paused);
 }
 
 export function remove(name: string) {
@@ -188,13 +188,13 @@ export function playAt(i: number, at = 0) {
   load(at);
 }
 
-/** Start the current song at `at` seconds. */
-function load(at: number) {
+/** Load the current song at `at` seconds, and start it unless told not to. */
+function load(at: number, play = true) {
   const name = get(current);
   if (!media || !name) return;
   media.src = '/media/' + encodeURIComponent(name);
   media.currentTime = at;
-  media.play().catch(() => {});
+  if (play) media.play().catch(() => {});
 }
 
 /** A song failed to load: retry it a couple of times, then report it and move on. */
@@ -213,6 +213,8 @@ function failed() {
   message.set("Can't play this file");
   // Skip to the next song, but stop once every song in the loop has failed.
   if (get(queue).length > 1 && ++failures < get(queue).length) {
-    setTimeout(next, 1500);
+    setTimeout(() => {
+      if (get(current) === name) next();
+    }, 1500);
   }
 }

@@ -11,10 +11,10 @@
 
 <header>
   <nav class="container">
-    <a class="brand" href="/">
+    <div class="brand">
       <img src="/logo.svg" alt="" width="30" height="30">
       <span>ytcut</span>
-    </a>
+    </div>
   </nav>
 </header>
 

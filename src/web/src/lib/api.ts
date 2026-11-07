@@ -43,6 +43,8 @@ export const api = {
   delete: (name: string) => request<string>('/delete', post({ name })),
   /** Tell the server this page is still open. */
   alive: () => fetch('/alive', { method: 'POST' }).catch(() => {}),
+  /** Tell the server this page is closing, so it need not wait out the idle limit. */
+  bye: () => navigator.sendBeacon('/bye'),
 };
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));

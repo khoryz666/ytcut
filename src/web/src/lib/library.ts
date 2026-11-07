@@ -6,7 +6,7 @@ export const files = writable<VideoFile[]>([]);
 export const filesError = writable('');
 export const jobs = writable<Job[]>([]);
 
-let running = 0;
+let finished = 0;
 
 export async function loadFiles() {
   try {
@@ -22,9 +22,9 @@ async function pollJobs() {
   try {
     const next = await api.jobs();
     jobs.set(next);
-    const now = next.filter((job) => job.status === 'running').length;
-    if (now < running) await loadFiles(); // A download finished.
-    running = now;
+    const now = next.filter((job) => job.status !== 'running').length;
+    if (now !== finished) await loadFiles(); // A download finished.
+    finished = now;
   } catch {
     // Keep the last list; the next tick tries again.
   }
@@ -33,5 +33,10 @@ async function pollJobs() {
 export function startPolling() {
   void pollJobs();
   const timer = setInterval(pollJobs, 1000);
-  return () => clearInterval(timer);
+  const bye = () => void api.bye();
+  addEventListener('pagehide', bye);
+  return () => {
+    clearInterval(timer);
+    removeEventListener('pagehide', bye);
+  };
 }

@@ -9,31 +9,31 @@
   let name = $state('');
   let info = $state<VideoInfo | null>(null);
   let looking = $state(false);
+  let slow = $state(false);
   let error = $state('');
   let start = $state(0);
   let end = $state(0);
-  let lookupTimer: ReturnType<typeof setTimeout> | undefined;
   let lookupUrl = '';
 
+  // A changed link makes the old preview wrong at once, before the new lookup starts.
   $effect(() => {
     const link = url.trim();
-    clearTimeout(lookupTimer);
-    if (!link) {
-      info = null;
-      error = '';
-      looking = false;
-      return;
-    }
-    lookupTimer = setTimeout(() => void lookup(link), 400);
-    return () => clearTimeout(lookupTimer);
+    lookupUrl = link;
+    info = null;
+    error = '';
+    looking = !!link;
+    slow = false;
+    if (!link) return;
+    const timer = setTimeout(() => void lookup(link), 400);
+    const slowTimer = setTimeout(() => (slow = true), 5000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(slowTimer);
+    };
   });
 
   /** Show the video behind the link, or why it can't be found. */
   async function lookup(link: string) {
-    lookupUrl = link;
-    info = null;
-    error = '';
-    looking = true;
     try {
       const video = await api.info(link);
       if (link === lookupUrl) info = video;
@@ -69,7 +69,7 @@
 <article class="stack">
   <div class="row between">
     <h2>Add a song</h2>
-    <span class="hint">Saved to your Music folder</span>
+    <span class="hint">Saved to your library folder</span>
   </div>
 
   <form class="stack" onsubmit={submit}>
@@ -80,6 +80,10 @@
         {looking ? 'Looking up…' : 'Download'}
       </button>
     </div>
+
+    {#if looking && slow}
+      <p class="hint">Still working. The first run downloads the tools, which can take a few minutes.</p>
+    {/if}
 
     {#if error}
       <p class="error"><ErrorText message={error} /></p>
