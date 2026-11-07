@@ -107,7 +107,10 @@ pub fn prepare(dir: &Path) -> Result<Tools> {
 fn find_in_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
-        .map(|dir| dir.join(name).with_extension(std::env::consts::EXE_EXTENSION))
+        .map(|dir| {
+            dir.join(name)
+                .with_extension(std::env::consts::EXE_EXTENSION)
+        })
         .find(|file| file.is_file())
 }
 

@@ -237,9 +237,12 @@ pub fn start(
 /// yt-dlp base command configured for library directory and cookies.
 fn base_yt_dlp(tools: &Tools, out: &Path, browser: Option<&str>) -> Command {
     let mut cmd = Command::new(&tools.yt_dlp);
-    cmd.current_dir(out)
-        .stdin(Stdio::null())
-        .args(["--ignore-config", "--no-playlist", "--encoding", "utf-8"]);
+    cmd.current_dir(out).stdin(Stdio::null()).args([
+        "--ignore-config",
+        "--no-playlist",
+        "--encoding",
+        "utf-8",
+    ]);
 
     if tools.ffmpeg.is_file() {
         cmd.arg("--ffmpeg-location").arg(&tools.ffmpeg);

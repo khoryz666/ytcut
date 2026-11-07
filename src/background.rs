@@ -11,8 +11,7 @@ pub fn data_dir() -> Result<PathBuf> {
     let data = dirs::data_local_dir()
         .context("no data folder on this system")?
         .join("ytcut");
-    fs::create_dir_all(&data)
-        .with_context(|| format!("could not create {}", data.display()))?;
+    fs::create_dir_all(&data).with_context(|| format!("could not create {}", data.display()))?;
     Ok(data)
 }
 
@@ -50,8 +49,7 @@ pub fn stop() -> Result<bool> {
     if !pfile.exists() {
         return Ok(false);
     }
-    let pid_str = fs::read_to_string(&pfile)
-        .with_context(|| "could not read pid file")?;
+    let pid_str = fs::read_to_string(&pfile).with_context(|| "could not read pid file")?;
     let _ = fs::remove_file(&pfile);
     let Ok(pid) = pid_str.trim().parse::<i32>() else {
         return Ok(false);
@@ -142,7 +140,6 @@ pub fn spawn(
         args.push(s.to_string());
     }
 
-    spawn_detached(&exe, &args)
-        .with_context(|| "failed to spawn detached background player")?;
+    spawn_detached(&exe, &args).with_context(|| "failed to spawn detached background player")?;
     Ok(())
 }
