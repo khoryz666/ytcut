@@ -5,8 +5,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rodio::cpal;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::Player as AudioPlayer;
 use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Source};
 
@@ -55,50 +53,12 @@ fn silence_alsa() {}
 
 /// Open an output device, preferring the PipeWire/PulseAudio server (which routes to the
 /// user's default sink — e.g. a Bluetooth speaker) and falling back to analog speakers.
+/// Open the system's default output (PulseAudio/PipeWire), which follows the user's
+/// chosen sink — a Bluetooth earphone, the speakers, whatever the desktop uses.
 fn open_sink() -> Result<MixerDeviceSink> {
-    // Try devices in order of preference: the PipeWire/PulseAudio server (which follows
-    // the user's default sink, e.g. a Bluetooth earphone) first, then analog speakers.
-    for device in ranked_devices() {
-        if let Ok(sink) = DeviceSinkBuilder::from_device(device)
-            .and_then(|b| b.with_error_callback(|_| {}).open_sink_or_fallback())
-        {
-            return Ok(sink);
-        }
-    }
-    DeviceSinkBuilder::open_default_sink().context("no usable output device")
-}
-
-/// Output devices, best first.
-fn ranked_devices() -> Vec<cpal::Device> {
-    let name_of = |d: &cpal::Device| {
-        d.description()
-            .map(|x| x.name().to_string())
-            .unwrap_or_default()
-    };
-    let mut devices: Vec<cpal::Device> = cpal::default_host()
-        .output_devices()
-        .map(|d| d.collect())
-        .unwrap_or_default();
-    devices.sort_by_key(|d| std::cmp::Reverse(device_score(&name_of(d))));
-    devices
-}
-
-fn device_score(name: &str) -> i32 {
-    let n = name.to_lowercase();
-    if n.contains("sound server") {
-        100
-    } else if n.contains("analog") || n.contains("speaker") || n.contains("headphone") {
-        50
-    } else if n.contains("hdmi")
-        || n.contains("displayport")
-        || n.contains("monitor")
-        || n.contains("discard")
-        || n.contains("null")
-    {
-        -100
-    } else {
-        0
-    }
+    DeviceSinkBuilder::from_default_device()
+        .and_then(|b| b.with_error_callback(|_| {}).open_sink_or_fallback())
+        .context("no usable output device")
 }
 
 impl Player {

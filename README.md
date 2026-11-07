@@ -23,7 +23,7 @@ nix run github:khoryz666/ytcut
 
 The first run needs internet. It downloads yt-dlp, ffmpeg and Deno (about 200 MB on Linux), checks them against the checksums their projects publish, and keeps them in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows). These are glibc binaries, so Alpine (musl) can't run them; on NixOS set `programs.nix-ld.enable = true;`.
 
-Linux needs ALSA (`libasound2`) installed — it is on nearly every desktop.
+Linux needs ALSA (`libasound2`) and PulseAudio/PipeWire installed — both are present on nearly every desktop.
 
 ## Use it
 
@@ -58,7 +58,7 @@ ytcut stop                                                    # stop the backgro
 ytcut update [VERSION]                                        # update yt-dlp + self
 ```
 
-The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`. Sound follows your system output automatically, preferring a connected Bluetooth earphone or your speakers; the settings screen also covers the sign-in browser, auto-update and volume.
+The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\ytcut\config.toml` (Windows), or with `/settings` in the interface, or per-command with `--out DIR`. Sound follows your system output through PulseAudio/PipeWire, so a connected Bluetooth earphone or the default speakers just work; the settings screen also covers the sign-in browser, auto-update and volume.
 
 ## Updates
 
@@ -79,7 +79,7 @@ Nothing else is written.
 
 ## Develop
 
-You need [Rust](https://rustup.rs) (stable) and the ALSA dev headers (`libasound2-dev` on Debian/Ubuntu). `nix develop` provides both.
+You need [Rust](https://rustup.rs) (stable) and the ALSA dev headers (`libasound2-dev` on Debian/Ubuntu). `nix develop` provides them.
 
 ```sh
 cargo run -- ~/Music    # run the interface against a folder
