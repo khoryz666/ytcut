@@ -64,7 +64,7 @@ The library folder is set in `~/.config/ytcut/config.toml` (Linux) / `%APPDATA%\
 
 Nothing to do. On start, ytcut checks for a new version and installs patch releases silently; for minor/major releases it tells you to run `ytcut update`. yt-dlp updates itself before downloads. Set `YTCUT_DISABLE_AUTOUPDATE=1` (or `autoupdate = "off"` in config.toml) to turn this off.
 
-Rust dependencies update themselves monthly: [Dependabot](.github/dependabot.yml) opens pull requests for the crates and GitHub Actions, CI verifies them, and passing updates are merged automatically. yt-dlp, ffmpeg and Deno are not part of that — they are downloaded as "latest" on first run, and yt-dlp keeps itself current because YouTube breaks old versions.
+Rust dependencies update themselves monthly: [Dependabot](.github/dependabot.yml) opens pull requests for the crates and GitHub Actions, CI verifies them, and passing updates are merged automatically. The pinned Nix toolchain is refreshed the same way by [`flake-update.yml`](.github/workflows/flake-update.yml). yt-dlp, ffmpeg and Deno are not part of that — they are downloaded as "latest" on first run, and yt-dlp keeps itself current because YouTube breaks old versions.
 
 ## If YouTube asks you to sign in
 

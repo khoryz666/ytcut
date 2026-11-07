@@ -1,0 +1,32 @@
+name: Flake update
+
+# Monthly: bump nixpkgs in flake.lock, rebuild to make sure nothing broke, and
+# push only if the build succeeds. Keeps the Nix dev shell (`nix develop`) and
+# `nix run` installs on a fresh toolchain and ALSA headers.
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'   # 03:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake update
+      - run: nix build -L
+      - name: Push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add flake.lock
+          git diff --cached --quiet && { echo "already up to date"; exit 0; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'build(deps): update flake.lock'
+          git push
