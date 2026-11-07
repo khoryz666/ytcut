@@ -4,17 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_dispatch: # update.yml starts this after it pushes
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
-      # Builds the Svelte page, embeds it in the Rust binary, and runs the
-      # Rust tests. An update that no longer compiles never reaches main.
-      - run: nix build -L
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # build.rs builds and type-checks the Svelte page first.
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

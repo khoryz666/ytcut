@@ -1,18 +1,25 @@
 name: Release
 
-# Build the self-contained binaries. Pushing a v* tag attaches them to a GitHub
-# release; running by hand only uploads build artifacts.
+# Pushing a v* tag builds both binaries and publishes them. A running ytcut finds
+# its asset by the target name in the file name; see update_self in src/tools.rs.
+# The tag must match the version in Cargo.toml.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
@@ -20,72 +27,35 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Build the web page
-        working-directory: src/web
-        run: npm ci && npm run build
-      - name: Fetch yt-dlp and ffmpeg
-        run: python3 scripts/fetch-tools.py --platform x86_64-linux --out tools >> "$GITHUB_ENV"
-      - name: Build the binary
-        env:
-          YTCUT_WEB_DIST: src/web/dist
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-        run: cargo build --release --features bundle --target x86_64-unknown-linux-musl
-      - name: Archive
-        run: |
-          mkdir -p dist
-          cp target/x86_64-unknown-linux-musl/release/ytcut dist/ytcut
-          tar -C dist -czf ytcut-linux-x86_64.tar.gz ytcut
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ytcut-linux-x86_64
-          path: ytcut-linux-x86_64.tar.gz
-
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build the web page
-        working-directory: src/web
-        run: npm ci && npm run build
-      - name: Fetch yt-dlp and ffmpeg
-        shell: pwsh
-        run: python scripts/fetch-tools.py --platform x86_64-windows --out tools >> $env:GITHUB_ENV
-      - name: Build the binary
+          targets: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
         env:
           # Link the C runtime statically so the .exe needs no Visual C++ install.
-          RUSTFLAGS: -C target-feature=+crt-static
-          YTCUT_WEB_DIST: src/web/dist
-        run: cargo build --release --features bundle
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Archive
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target\release\ytcut.exe dist\ytcut.exe
-          Compress-Archive -Path dist\ytcut.exe -DestinationPath ytcut-windows-x86_64.zip
+        if: runner.os == 'Linux'
+        run: tar -C target/${{ matrix.target }}/release -czf ytcut-${{ matrix.target }}.tar.gz ytcut
+      - name: Archive
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path target\${{ matrix.target }}\release\ytcut.exe -DestinationPath ytcut-${{ matrix.target }}.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: ytcut-windows-x86_64
-          path: ytcut-windows-x86_64.zip
+          name: ${{ matrix.target }}
+          path: ytcut-${{ matrix.target }}.*
 
   release:
-    needs: [linux, windows]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/ytcut-linux-x86_64/*.tar.gz
-            artifacts/ytcut-windows-x86_64/*.zip
+          files: artifacts/*
