@@ -13,7 +13,7 @@ Download the file for your system from the [latest release](https://github.com/k
 
 The first run needs internet. It downloads yt-dlp, ffmpeg and Deno, about 200 MB on Linux, and can take a few minutes. They are checked against the checksums their projects publish, and kept in `~/.local/share/ytcut` (Linux) or `%LOCALAPPDATA%\ytcut` (Windows).
 
-These tools need glibc on Linux, so Alpine and NixOS need extra setup.
+These tools are glibc binaries. Alpine (musl) can't run them. On NixOS, set `programs.nix-ld.enable = true;` in your configuration so the dynamic linker is available.
 
 ## Updates
 
@@ -80,16 +80,16 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 Debug builds do not update themselves.
 
-| Path | What it holds |
-|---|---|
-| `src/main.rs` | Startup, single-instance lock, idle shutdown |
-| `src/app.rs` | Shared state, and the check that only ytcut's own page may call the server |
-| `src/api.rs` | Routes, the embedded page, and video streaming |
-| `src/browser.rs` | Finds the browser and opens the window |
-| `src/library.rs` | The video folder: list, rename, delete, safe file names |
-| `src/downloads.rs` | yt-dlp: look up, download, progress |
-| `src/tools.rs` | Downloads the tools, and updates yt-dlp and ytcut |
-| `src/web/` | Svelte 5 page, Pico CSS, and the Vite config |
+| Path               | What it holds                                                              |
+| ------------------ | -------------------------------------------------------------------------- |
+| `src/main.rs`      | Startup, single-instance lock, idle shutdown                               |
+| `src/app.rs`       | Shared state, and the check that only ytcut's own page may call the server |
+| `src/api.rs`       | Routes, the embedded page, and video streaming                             |
+| `src/browser.rs`   | Finds the browser and opens the window                                     |
+| `src/library.rs`   | The video folder: list, rename, delete, safe file names                    |
+| `src/downloads.rs` | yt-dlp: look up, download, progress                                        |
+| `src/tools.rs`     | Downloads the tools, and updates yt-dlp and ytcut                          |
+| `src/web/`         | Svelte 5 page, Pico CSS, and the Vite config                               |
 
 ## Release
 
