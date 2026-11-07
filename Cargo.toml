@@ -19,7 +19,7 @@ cpal = { version = "0.18", features = ["pulseaudio"] }
 self-replace = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
+sha2 = "0.11"
 tar = "0.4"
 toml = "0.8"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
