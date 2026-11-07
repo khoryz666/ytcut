@@ -14,7 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 
 use crate::config::Config;
@@ -117,60 +117,63 @@ impl Default for SettingsState {
 #[derive(Clone, Copy, Debug)]
 pub struct PaletteItem {
     pub cmd: &'static str,
-    pub args: &'static str,
+    pub alias: &'static str,
     pub desc: &'static str,
 }
+
+/// Fixed width of the command column in the palette so descriptions line up.
+const COMMAND_COL_WIDTH: usize = 22;
 
 pub const COMMAND_PALETTE_ITEMS: &[PaletteItem] = &[
     PaletteItem {
         cmd: "/add",
-        args: "[<url>]",
-        desc: "Open download dialog or download YouTube audio",
+        alias: "",
+        desc: "Download a song",
     },
     PaletteItem {
         cmd: "/background",
-        args: "",
-        desc: "Play current track and queue in background (persists on exit)",
+        alias: "/bg",
+        desc: "Play in background",
     },
     PaletteItem {
         cmd: "/stop",
-        args: "",
-        desc: "Stop background playback and pause player",
+        alias: "",
+        desc: "Stop background audio",
     },
     PaletteItem {
         cmd: "/search",
-        args: "[<query>]",
-        desc: "Filter library songs by name (empty to clear)",
+        alias: "",
+        desc: "Filter the library",
     },
     PaletteItem {
         cmd: "/refresh",
-        args: "",
-        desc: "Reload library songs from disk",
+        alias: "",
+        desc: "Reload the library",
     },
     PaletteItem {
         cmd: "/settings",
-        args: "",
-        desc: "Open settings (folder, browser, autoupdate, volume)",
+        alias: "",
+        desc: "Open settings",
     },
     PaletteItem {
         cmd: "/dir",
-        args: "<path>",
-        desc: "Set music library folder",
+        alias: "",
+        desc: "Change library folder",
     },
     PaletteItem {
         cmd: "/update",
-        args: "",
-        desc: "Update yt-dlp and ytcut to the latest version",
+        alias: "",
+        desc: "Update ytcut",
     },
     PaletteItem {
         cmd: "/help",
-        args: "",
-        desc: "Open keybindings and command documentation",
+        alias: "",
+        desc: "Show help",
     },
     PaletteItem {
         cmd: "/quit",
-        args: "",
-        desc: "Exit ytcut",
+        alias: "",
+        desc: "Quit",
     },
 ];
 
@@ -190,7 +193,10 @@ pub fn matching_commands(input: &str) -> Vec<&'static PaletteItem> {
         .iter()
         .filter(|item| {
             let item_clean = item.cmd.strip_prefix('/').unwrap_or(item.cmd);
-            item_clean.contains(query_cmd) || item.desc.to_lowercase().contains(query_cmd)
+            let alias_clean = item.alias.strip_prefix('/').unwrap_or(item.alias);
+            item_clean.contains(query_cmd)
+                || (!alias_clean.is_empty() && alias_clean.contains(query_cmd))
+                || item.desc.to_lowercase().contains(query_cmd)
         })
         .collect()
 }
@@ -1237,6 +1243,7 @@ impl AppUi {
 
     fn render_add_dialog(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(68, 52, area);
+        f.render_widget(Clear, popup);
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -1348,13 +1355,13 @@ impl AppUi {
             .map(|(display_idx, &song_idx)| {
                 let song = &self.songs[song_idx];
                 let selected = display_idx == self.lib_selected && focused;
-                song_row(selected, &song.name, &song.formatted_size(), area.width)
+                song_row(selected, &song.name, area.width)
             })
             .collect();
 
-        let list = List::new(items).block(block);
+        let list = List::new(with_gaps(items)).block(block);
         let mut state = ListState::default();
-        *state.offset_mut() = scroll_offset(self.lib_selected, area.height as usize);
+        *state.offset_mut() = spaced_offset(self.lib_selected, area.height);
         f.render_stateful_widget(list, area, &mut state);
     }
 
@@ -1417,16 +1424,16 @@ impl AppUi {
                 };
 
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {marker}{num}"), text_style),
+                    Span::styled(format!("  {marker}{num}"), text_style),
                     Span::styled(name, text_style),
                 ]))
                 .style(item_style)
             })
             .collect();
 
-        let list = List::new(items).block(block);
+        let list = List::new(with_gaps(items)).block(block);
         let mut state = ListState::default();
-        *state.offset_mut() = scroll_offset(self.playlist_selected, area.height as usize);
+        *state.offset_mut() = spaced_offset(self.playlist_selected, area.height);
         f.render_stateful_widget(list, area, &mut state);
     }
 
@@ -1592,6 +1599,7 @@ impl AppUi {
             width,
             height,
         };
+        f.render_widget(Clear, popup);
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -1648,15 +1656,11 @@ impl AppUi {
                 .map(|(idx, item)| {
                     let is_selected = idx == self.command_palette_selected;
                     let marker = if is_selected { "▶ " } else { "  " };
-                    let cmd_text = if item.args.is_empty() {
-                        format!("{marker}{:<10} ", item.cmd)
-                    } else {
-                        format!("{marker}{} {} ", item.cmd, item.args)
-                    };
 
-                    let (cmd_style, desc_style) = if is_selected {
+                    let (cmd_style, alias_style, desc_style) = if is_selected {
                         (
                             Style::default().fg(theme::BG).add_modifier(Modifier::BOLD),
+                            Style::default().fg(theme::BG),
                             Style::default().fg(theme::BG),
                         )
                     } else {
@@ -1664,6 +1668,7 @@ impl AppUi {
                             Style::default()
                                 .fg(theme::ACCENT)
                                 .add_modifier(Modifier::BOLD),
+                            Style::default().fg(theme::MUTED),
                             Style::default().fg(theme::MUTED),
                         )
                     };
@@ -1673,8 +1678,19 @@ impl AppUi {
                         Style::default()
                     };
 
+                    let alias = if item.alias.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  {}", item.alias)
+                    };
+                    let left_w =
+                        marker.chars().count() + item.cmd.chars().count() + alias.chars().count();
+                    let pad = " ".repeat(COMMAND_COL_WIDTH.saturating_sub(left_w));
+
                     let line = Line::from(vec![
-                        Span::styled(cmd_text, cmd_style),
+                        Span::styled(format!("{marker}{}", item.cmd), cmd_style),
+                        Span::styled(alias, alias_style),
+                        Span::raw(pad),
                         Span::styled(item.desc, desc_style),
                     ]);
                     ListItem::new(line).style(item_style)
@@ -1712,6 +1728,7 @@ impl AppUi {
 
     fn render_settings(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(72, 55, area);
+        f.render_widget(Clear, popup);
 
         let rows = vec![
             self.settings_line(SettingsRow::Dir, "Library folder", self.dir_display()),
@@ -1768,6 +1785,7 @@ impl AppUi {
 
     fn render_help(&self, f: &mut ratatui::Frame, area: Rect) {
         let popup = centered_rect(72, 85, area);
+        f.render_widget(Clear, popup);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -1813,6 +1831,7 @@ impl AppUi {
 
     fn render_prompt(&self, f: &mut ratatui::Frame, prompt: &PromptType, area: Rect) {
         let popup_area = centered_rect(60, 20, area);
+        f.render_widget(Clear, popup_area);
 
         match prompt {
             PromptType::Delete(name) => {
@@ -2000,25 +2019,15 @@ fn field_value(value: &str, placeholder: &str, focused: bool) -> Span<'static> {
     }
 }
 
-/// A library row: name on the left, size right-aligned, full-width highlight.
-fn song_row(selected: bool, name: &str, size: &str, width: u16) -> ListItem<'static> {
-    let inner = width.saturating_sub(4) as usize; // borders + one margin each side
+/// A library row: a marker and the song name, with a little breathing room.
+fn song_row(selected: bool, name: &str, width: u16) -> ListItem<'static> {
     let marker = if selected { "▶ " } else { "  " };
-    let size_label = format!(" {} ", size);
-
-    let content_w = inner.saturating_sub(size_label.chars().count());
-    let name_trunc = truncate_str(name, content_w);
-    let pad = content_w.saturating_sub(name_trunc.chars().count());
+    let name_trunc = truncate_str(name, width.saturating_sub(6) as usize);
 
     let text_style = if selected {
         Style::default().fg(theme::BG).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(theme::FG)
-    };
-    let size_style = if selected {
-        Style::default().fg(theme::BG)
-    } else {
-        Style::default().fg(theme::MUTED)
     };
     let item_style = if selected {
         Style::default().bg(theme::ACCENT)
@@ -2026,12 +2035,27 @@ fn song_row(selected: bool, name: &str, size: &str, width: u16) -> ListItem<'sta
         Style::default()
     };
 
-    ListItem::new(Line::from(vec![
-        Span::styled(format!(" {marker}{name_trunc}"), text_style),
-        Span::raw(" ".repeat(pad)),
-        Span::styled(size_label, size_style),
-    ]))
+    ListItem::new(Line::from(vec![Span::styled(
+        format!("  {marker}{name_trunc}"),
+        text_style,
+    )]))
     .style(item_style)
+}
+
+/// Insert a blank line after each item so rows are taller and easier to scan.
+fn with_gaps(items: Vec<ListItem<'static>>) -> Vec<ListItem<'static>> {
+    let mut out = Vec::with_capacity(items.len().saturating_mul(2));
+    for item in items {
+        out.push(item);
+        out.push(ListItem::new(""));
+    }
+    out
+}
+
+/// Scroll offset for a gap-spaced list (two buffer rows per song).
+fn spaced_offset(selected: usize, area_height: u16) -> usize {
+    let visible = ((area_height.saturating_sub(2)) as usize).div_ceil(2);
+    scroll_offset(selected, visible) * 2
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -2120,6 +2144,7 @@ mod tests {
         assert_eq!(matching_commands("quit")[0].cmd, "/quit");
         assert_eq!(matching_commands("/add")[0].cmd, "/add");
         assert_eq!(matching_commands("/back")[0].cmd, "/background");
+        assert_eq!(matching_commands("/bg")[0].cmd, "/background");
         assert_eq!(matching_commands("/stop")[0].cmd, "/stop");
         assert_eq!(matching_commands("/search")[0].cmd, "/search");
         assert_eq!(matching_commands("/refresh")[0].cmd, "/refresh");
