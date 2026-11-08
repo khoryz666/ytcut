@@ -480,32 +480,39 @@ impl AppUi {
     pub(super) fn render_bottom_status(&self, f: &mut ratatui::Frame, area: Rect) {
         let mut spans: Vec<Span> = Vec::new();
 
-        if let Some((msg, _)) = &self.status_message {
-            spans.push(Span::styled(
-                format!(" {msg} "),
-                Style::default().fg(theme::YELLOW),
-            ));
-        } else if let Ok(guard) = UPDATE_NOTICE.lock() {
-            if let Some(notice) = guard.as_ref() {
+        // Surface the most recent failed download so it never fails silently.
+        // "Sign in" failures get a more actionable hint.
+        let jobs = self.jobs.lock().unwrap();
+        if let Some(job) = jobs.iter().rev().find(|j| j.status == Status::Error) {
+            if job.message.contains("Sign in") {
                 spans.push(Span::styled(
-                    format!(" ★ {notice} "),
-                    Style::default()
-                        .fg(theme::MAGENTA)
-                        .add_modifier(Modifier::BOLD),
+                    " [Sign in needed: press o to open YouTube] ",
+                    Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    format!(" ✗ {} ", truncate_str(&job.message, 64)),
+                    Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
                 ));
             }
         }
 
-        // Check if any job failed requiring sign in
-        let jobs = self.jobs.lock().unwrap();
-        if jobs
-            .iter()
-            .any(|j| j.status == Status::Error && j.message.contains("Sign in"))
-        {
-            spans.push(Span::styled(
-                " [Sign in needed: press o to open YouTube] ",
-                Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
-            ));
+        if spans.is_empty() {
+            if let Some((msg, _)) = &self.status_message {
+                spans.push(Span::styled(
+                    format!(" {msg} "),
+                    Style::default().fg(theme::YELLOW),
+                ));
+            } else if let Ok(guard) = UPDATE_NOTICE.lock() {
+                if let Some(notice) = guard.as_ref() {
+                    spans.push(Span::styled(
+                        format!(" ★ {notice} "),
+                        Style::default()
+                            .fg(theme::MAGENTA)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+            }
         }
 
         if spans.is_empty() {
