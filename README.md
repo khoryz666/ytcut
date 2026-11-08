@@ -8,10 +8,10 @@ Download songs from YouTube as audio, keep the part you like, and play them from
 
 ## Install
 
-Download the file for your system from the [latest release](https://github.com/khoryz666/ytcut/releases/latest), unpack it, and run it:
+Download the file for your system from the [latest release](https://github.com/khoryz666/ytcut/releases/latest):
 
-- **Linux (x86-64):** `ytcut-x86_64-unknown-linux-gnu.tar.gz`
-- **Windows (x86-64):** `ytcut-x86_64-pc-windows-msvc.zip`
+- **Linux (x86-64):** `ytcut-x86_64-unknown-linux-gnu.tar.gz` — unpack it, then run `ytcut`
+- **Windows (x86-64):** `ytcut-x86_64-pc-windows-msvc.exe` — run it directly
 
 Or with a package manager:
 

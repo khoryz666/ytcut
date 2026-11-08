@@ -40,7 +40,7 @@ jobs:
         run: tar -C target/${{ matrix.target }}/release -czf ytcut-${{ matrix.target }}.tar.gz ytcut
       - name: Archive
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path target\${{ matrix.target }}\release\ytcut.exe -DestinationPath ytcut-${{ matrix.target }}.zip
+        run: Copy-Item target/${{ matrix.target }}/release/ytcut.exe ytcut-${{ matrix.target }}.exe
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}

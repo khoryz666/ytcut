@@ -38,7 +38,7 @@ pub fn classify_gap(current: &Version, latest: &Version) -> ReleaseGap {
 pub fn asset_name(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("linux", "x86_64") => Some("ytcut-x86_64-unknown-linux-gnu.tar.gz"),
-        ("windows", "x86_64") => Some("ytcut-x86_64-pc-windows-msvc.zip"),
+        ("windows", "x86_64") => Some("ytcut-x86_64-pc-windows-msvc.exe"),
         _ => None,
     }
 }
@@ -174,6 +174,9 @@ fn install_version(version: &Version, asset: &str, temp_dir: &Path) -> Result<()
         let mut zip_file = zip.by_name(&target_name)?;
         let mut dest = File::create(&extracted_bin)?;
         io::copy(&mut zip_file, &mut dest)?;
+    } else if asset.ends_with(".exe") {
+        // The Windows asset is a standalone executable — no extraction needed.
+        std::fs::copy(&archive_path, &extracted_bin)?;
     } else {
         bail!("unsupported archive format '{asset}'");
     }
@@ -250,7 +253,7 @@ mod tests {
         );
         assert_eq!(
             asset_name("windows", "x86_64"),
-            Some("ytcut-x86_64-pc-windows-msvc.zip")
+            Some("ytcut-x86_64-pc-windows-msvc.exe")
         );
         assert_eq!(asset_name("macos", "x86_64"), None);
         assert_eq!(asset_name("linux", "arm"), None);
