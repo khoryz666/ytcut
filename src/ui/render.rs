@@ -91,7 +91,7 @@ impl AppUi {
         let songs = if count == 1 { "song" } else { "songs" };
         let dir = truncate_str(&self.library_dir.display().to_string(), 40);
 
-        let wordmark = " ytcut";
+        let wordmark = " ✂ ytcut";
         let version = format!(" v{version} ");
         let right = format!("{count} {songs} · {dir}  ");
 
@@ -747,6 +747,8 @@ impl AppUi {
             .style(Style::default().bg(theme::SURFACE));
 
         let lines = vec![
+            Line::from(""),
+            help_header(" ytcut — cut & play YouTube audio"),
             Line::from(""),
             help_header("Navigation"),
             Line::from(""),
