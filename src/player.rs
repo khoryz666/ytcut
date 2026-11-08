@@ -73,9 +73,13 @@ fn silence_alsa() {}
 /// Open the system's default output (PulseAudio/PipeWire), which follows the user's
 /// chosen sink — a Bluetooth earphone, the speakers, whatever the desktop uses.
 fn open_sink() -> Result<MixerDeviceSink> {
-    DeviceSinkBuilder::from_default_device()
+    let mut sink = DeviceSinkBuilder::from_default_device()
         .and_then(|b| b.with_error_callback(|_| {}).open_sink_or_fallback())
-        .context("no usable output device")
+        .context("no usable output device")?;
+    // The sink is dropped when the player goes away (e.g. at exit). That's
+    // expected, so don't print rodio's "Dropping DeviceSink" warning.
+    sink.log_on_drop(false);
+    Ok(sink)
 }
 
 impl Player {
