@@ -1,5 +1,7 @@
 # ytcut
 
+[Website](https://khoryz666.github.io/ytcut/) · [中文文档](https://khoryz666.github.io/ytcut/zh/)
+
 Download songs from YouTube as audio, keep the part you like, and play them from your terminal.
 
 `ytcut` is a terminal music player. It runs in your terminal (no browser, no GUI), saves audio to your Music folder, and keeps itself and its tools up to date.
