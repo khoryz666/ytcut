@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ytcut · 终端音乐播放器</title>
 <meta name="description" content="直接保存 YouTube 歌曲为纯音频，随心截取喜爱的片段，在终端中安静播放。">
-<meta name="theme-color" content="#14193a">
+<meta name="theme-color" content="#0f1019">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../style.css">
 </head>
@@ -14,13 +14,13 @@
   <div class="wrap">
     <a class="brand" href="./">
       <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path fill="#AFBEFF" d="M 22 17 C 22 15.3 23.6 14 25.2 14.4 L 47.4 19.8 C 48.9 20.2 50 21.5 50 23.1 L 50 40.5 C 47.9 39.5 45.3 39 42.5 39 C 36.7 39 32 42.4 32 46.5 C 32 50.6 36.7 54 42.5 54 C 47.8 54 52.2 51.1 52.9 47.4 C 53 46.9 53 41.5 53 22 L 53 21 C 53 19.5 51.8 18.2 50.3 17.8 L 26.5 12 C 24.5 11.5 22 13 22 15.5 Z"/>
-        <ellipse cx="20" cy="46" rx="8" ry="5.5" transform="rotate(-18 20 46)" fill="#AFBEFF" />
-        <rect x="20" y="16" width="3" height="30" fill="#AFBEFF" rx="1.5"/>
-        <path d="M 10 52 C 14 49, 18 55, 23 52 C 28 49, 32 55, 37 52 C 42 49, 46 55, 51 52 C 55 49, 58 53, 62 51" fill="none" stroke="#FFB38F" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <line x1="33" y1="28" x2="25" y2="38" stroke="#FFB38F" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="23" cy="40" r="2.5" fill="#FFB38F"/>
-        <circle cx="35" cy="26" r="2.5" fill="#FFB38F"/>
+        <path fill="#7AA2F7" d="M 22 17 C 22 15.3 23.6 14 25.2 14.4 L 47.4 19.8 C 48.9 20.2 50 21.5 50 23.1 L 50 40.5 C 47.9 39.5 45.3 39 42.5 39 C 36.7 39 32 42.4 32 46.5 C 32 50.6 36.7 54 42.5 54 C 47.8 54 52.2 51.1 52.9 47.4 C 53 46.9 53 41.5 53 22 L 53 21 C 53 19.5 51.8 18.2 50.3 17.8 L 26.5 12 C 24.5 11.5 22 13 22 15.5 Z"/>
+        <ellipse cx="20" cy="46" rx="8" ry="5.5" transform="rotate(-18 20 46)" fill="#7AA2F7" />
+        <rect x="20" y="16" width="3" height="30" fill="#7AA2F7" rx="1.5"/>
+        <path d="M 10 52 C 14 49, 18 55, 23 52 C 28 49, 32 55, 37 52 C 42 49, 46 55, 51 52 C 55 49, 58 53, 62 51" fill="none" stroke="#BB9AF7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="33" y1="28" x2="25" y2="38" stroke="#BB9AF7" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="23" cy="40" r="2.5" fill="#BB9AF7"/>
+        <circle cx="35" cy="26" r="2.5" fill="#BB9AF7"/>
       </svg>
       ytcut
     </a>
@@ -30,7 +30,7 @@
       <a href="#features">功能</a>
       <a href="#install">安装</a>
       <a href="https://github.com/khoryz666/ytcut">GitHub</a>
-      <a href="../" hreflang="en" lang="en">English</a>
+      <a class="lang" href="../" hreflang="en" lang="en">English</a>
     </nav>
   </div>
 </header>
@@ -42,25 +42,55 @@
       <h1>保存 YouTube 歌曲，<br><em>只留你心动的那一段。</em></h1>
       <p class="lead">直接保存为纯音频，随心裁剪起止时间，在终端里安静播放。</p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载 Release</a>
+        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载 release</a>
         <a class="btn ghost" href="https://github.com/khoryz666/ytcut">查看源码</a>
       </div>
     </div>
-    <div class="mark">
-      <svg viewBox="0 0 64 64" width="100%" height="100%" aria-hidden="true">
-        <path fill="#AFBEFF" d="M 22 17 C 22 15.3 23.6 14 25.2 14.4 L 47.4 19.8 C 48.9 20.2 50 21.5 50 23.1 L 50 40.5 C 47.9 39.5 45.3 39 42.5 39 C 36.7 39 32 42.4 32 46.5 C 32 50.6 36.7 54 42.5 54 C 47.8 54 52.2 51.1 52.9 47.4 C 53 46.9 53 41.5 53 22 L 53 21 C 53 19.5 51.8 18.2 50.3 17.8 L 26.5 12 C 24.5 11.5 22 13 22 15.5 Z"/>
-        <ellipse cx="20" cy="46" rx="8" ry="5.5" transform="rotate(-18 20 46)" fill="#AFBEFF" />
-        <rect x="20" y="16" width="3" height="30" fill="#AFBEFF" rx="1.5"/>
-        <path d="M 10 52 C 14 49, 18 55, 23 52 C 28 49, 32 55, 37 52 C 42 49, 46 55, 51 52 C 55 49, 58 53, 62 51" fill="none" stroke="#FFB38F" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <line x1="33" y1="28" x2="25" y2="38" stroke="#FFB38F" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="23" cy="40" r="2.5" fill="#FFB38F"/>
-        <circle cx="35" cy="26" r="2.5" fill="#FFB38F"/>
-      </svg>
+
+    <div class="term" role="img" aria-label="ytcut 终端界面，展示曲库、队列与播放条">
+      <div class="term-bar">
+        <div class="term-dots">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+        </div>
+        <span class="term-title">ytcut — 终端音乐播放器</span>
+      </div>
+      <div class="term-body">
+        <div class="term-head">
+          <span class="wordmark">ytcut v0.4.1</span>
+          <span class="meta">14 首歌曲 · ~/Music</span>
+        </div>
+
+        <div class="term-grid">
+          <div class="panel focused">
+            <span class="panel-title"> 曲库 </span>
+            <div class="row sel"><span class="idx">▶ 01.</span><span class="name">Lofi Chill - Study Beats</span></div>
+            <div class="row"><span class="idx">  02.</span><span class="name">Synthwave Sunset Drive</span></div>
+            <div class="row"><span class="idx">  03.</span><span class="name">Midnight City (Guitar Cut)</span></div>
+            <div class="row"><span class="idx">  04.</span><span class="name">Rain Sound Ambient 1h</span></div>
+          </div>
+          <div class="panel">
+            <span class="panel-title"> 队列 (3) </span>
+            <div class="row playing"><span class="idx">▶ 1</span><span class="name">Lofi Chill</span></div>
+            <div class="row"><span class="idx">  2</span><span class="name">Synthwave Sunset</span></div>
+            <div class="row"><span class="idx">  3</span><span class="name">Midnight City</span></div>
+          </div>
+        </div>
+
+        <div class="player">
+          <span class="playbtn">▶</span>
+          <span class="title">Lofi Chill - Study Beats</span>
+          <span class="progress"><span class="p-fill">███████</span><span class="p-knob">●</span><span class="p-empty">░░░░░░░░░░</span></span>
+          <span class="time">01:24 / 03:45</span>
+          <span class="chip on">⇆</span>
+          <span class="chip off">↻</span>
+        </div>
+
+        <div class="status">Tab 切换面板 · 空格 暂停 · / 命令 · ? 帮助</div>
+      </div>
     </div>
   </div>
-  <svg class="wave-edge" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M0,30 C240,60 480,0 720,30 C960,60 1200,0 1440,30 L1440,60 L0,60 Z"/>
-  </svg>
 </div>
 
 <section id="how">
@@ -71,14 +101,17 @@
     </div>
     <div class="steps">
       <div class="step">
+        <span class="num">1</span>
         <h3>下载即截取</h3>
         <p>在 <code>/add</code> 填入起止时间（如 1:30），只保存副歌或精选段落。</p>
       </div>
       <div class="step">
+        <span class="num">2</span>
         <h3>终端内播放</h3>
         <p>上下键选歌，空格播放暂停，Tab 切换队列。无需开网页，极低内存占用。</p>
       </div>
       <div class="step">
+        <span class="num">3</span>
         <h3>后台常驻</h3>
         <p>输入 <code>/bg</code> 或 <code>--background</code> 转入后台，专注编码与工作。</p>
       </div>
@@ -93,101 +126,81 @@
       <p>基于 Ratatui 构建的纯终端交互界面，键盘操作行云流水。</p>
     </div>
     <div class="screens">
-      <figure class="terminal">
-        <div class="frame">
-          <div class="bar">
-            <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-            <span class="bar-title">ytcut v0.4.1 · 曲库</span>
-          </div>
-          <div class="screen-body">
-            <div>
-              <div class="t-muted">ytcut v0.4.1           14 首歌曲 · ~/Music</div>
-              <div style="margin-top: 8px;">
-                <span class="t-accent">┌─ 曲库 ─────────────────────────┐</span><br>
-                <span class="t-green">│ ▶ 01. Lofi Chill - Study Beats │</span><br>
-                <span>│   02. Synthwave Sunset Drive   │</span><br>
-                <span>│   03. Midnight City (Guitar Cut│</span><br>
-                <span>│   04. Rain Sound Ambient 1h    │</span><br>
-                <span class="t-accent">└────────────────────────────────┘</span>
-              </div>
-            </div>
-            <div>
-              <div style="margin-top: 8px;">
-                <span class="t-green">▶ Lofi Chill - Study Beats</span><br>
-                <span class="t-muted">01:24 </span><span class="t-accent">[========--------]</span><span class="t-muted"> 03:45</span><br>
-                <span class="t-muted">音量: 85%  [S]随机  [R]单曲循环</span>
-              </div>
-              <div class="t-muted" style="margin-top: 6px; font-size: 11px; border-top: 1px solid #23273e; padding-top: 4px;">
-                空格: 播放 · Tab: 切换队列 · /: 命令 · ?: 帮助
-              </div>
-            </div>
-          </div>
-        </div>
-        <figcaption>播放器与曲库<span>双栏曲库与队列管理，纯键盘方向键与快捷键操作</span></figcaption>
-      </figure>
 
       <figure class="terminal">
-        <div class="frame">
-          <div class="bar">
-            <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-            <span class="bar-title">ytcut · 添加歌曲</span>
+        <div class="term">
+          <div class="term-bar">
+            <div class="term-dots">
+              <span class="term-dot red"></span>
+              <span class="term-dot yellow"></span>
+              <span class="term-dot green"></span>
+            </div>
+            <span class="term-title">ytcut · 添加歌曲</span>
           </div>
-          <div class="screen-body">
-            <div>
-              <div class="t-yellow">┌─ 添加 YouTube 音频 ───────────┐</div>
-              <div style="padding: 6px 0;">
-                <span class="t-muted">链接: </span><span class="t-accent">https://youtube.com/watch?v=...</span><br>
-                <span class="t-muted">命名: </span><span>Midnight City (Solo Cut)</span><br>
-                <br>
-                <span class="t-muted">起始: </span><span class="t-yellow">01:45</span>   <span class="t-muted">结束: </span><span class="t-yellow">02:30</span><br>
-                <span class="t-muted">截取: </span><span class="t-green">00:45 音频片段</span>
-              </div>
-              <div class="t-yellow">└───────────────────────────────┘</div>
+          <div class="term-body">
+            <div class="panel focused" style="margin-bottom: 10px;">
+              <span class="panel-title"> 添加 YouTube 音频 </span>
+              <div class="row" style="margin-bottom: 2px;"><span class="idx">▶ 链接</span><span class="name">https://youtube.com/watch?v=...</span></div>
+              <div class="row" style="margin-bottom: 2px;"><span class="idx">  命名</span><span class="name">Midnight City (Solo Cut)</span></div>
+              <div class="row"><span class="idx">  截取</span><span class="name"><span style="color: var(--yellow)">01:45</span> → <span style="color: var(--yellow)">02:30</span> · <span style="color: var(--green)">00:45 片段</span></span></div>
             </div>
-            <div>
-              <div style="margin-top: 8px;">
-                <span class="t-green">✓ yt-dlp:</span> <span class="t-muted">正在提取原声流...</span><br>
-                <span class="t-accent">[====================] 100%</span><br>
-                <span class="t-muted">已保存至 ~/Music/Midnight City (Solo Cut).m4a</span>
-              </div>
-              <div class="t-muted" style="margin-top: 6px; font-size: 11px; border-top: 1px solid #23273e; padding-top: 4px;">
-                Enter: 开始下载 · Tab: 下一个字段 · Esc: 取消
-              </div>
-            </div>
+            <div class="row"><span class="idx" style="color: var(--green)">✓ yt-dlp:</span><span class="name" style="color: var(--muted)">正在提取原声流…</span></div>
+            <div class="row" style="margin-top: 2px;"><span class="name"><span class="p-fill">████████████████████</span> 100%</span></div>
+            <div class="status" style="margin-top: 10px;">Enter: 下载 · Tab: 下一字段 · Esc: 取消</div>
           </div>
         </div>
         <figcaption>下载并截取<span>保存前裁掉片头前奏或空白噪音，只留精华</span></figcaption>
       </figure>
 
       <figure class="terminal">
-        <div class="frame">
-          <div class="bar">
-            <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-            <span class="bar-title">ytcut · 命令面板</span>
+        <div class="term">
+          <div class="term-bar">
+            <div class="term-dots">
+              <span class="term-dot red"></span>
+              <span class="term-dot yellow"></span>
+              <span class="term-dot green"></span>
+            </div>
+            <span class="term-title">ytcut · 命令面板</span>
           </div>
-          <div class="screen-body">
-            <div>
-              <div class="t-accent">┌─ 命令面板 (/) ────────────────┐</div>
-              <div style="padding: 4px 0;">
-                <span class="t-accent">› /add &lt;url&gt;</span>   <span class="t-muted">下载并裁剪音频</span><br>
-                <span>  /bg          转入后台无头播放</span><br>
-                <span>  /settings    设置音频输出与浏览器</span><br>
-                <span>  /search &lt;q&gt;  过滤当前曲库</span><br>
-                <span>  /dir &lt;path&gt;  切换音乐保存目录</span><br>
-                <span>  /stop        停止后台播放进程</span><br>
-                <span>  /update      刷新 yt-dlp 与自身</span>
-              </div>
-              <div class="t-accent">└───────────────────────────────┘</div>
+          <div class="term-body">
+            <div class="panel focused">
+              <span class="panel-title"> 命令 </span>
+              <div class="pal-row" style="margin-bottom: 2px;"><span class="cmd">/add</span><span class="desc">下载一首歌曲</span></div>
+              <div class="pal-row sel"><span class="cmd">/background</span><span class="desc">转入后台播放 (/bg)</span></div>
+              <div class="pal-row"><span class="cmd">/search</span><span class="desc">过滤曲库</span></div>
+              <div class="pal-row"><span class="cmd">/settings</span><span class="desc">打开设置</span></div>
+              <div class="pal-row"><span class="cmd">/update</span><span class="desc">更新 ytcut</span></div>
             </div>
-            <div>
-              <div class="t-muted" style="margin-top: 6px; font-size: 11px; border-top: 1px solid #23273e; padding-top: 4px;">
-                ↑/↓: 移动光标 · Enter: 执行 · Esc: 关闭
-              </div>
-            </div>
+            <div class="status" style="margin-top: 10px;">↑/↓: 选择 · Enter: 执行 · Esc: 关闭</div>
           </div>
         </div>
         <figcaption>命令面板<span>按下 / 即可一键直达所有配置、路径切换与操作</span></figcaption>
       </figure>
+
+      <figure class="terminal">
+        <div class="term">
+          <div class="term-bar">
+            <div class="term-dots">
+              <span class="term-dot red"></span>
+              <span class="term-dot yellow"></span>
+              <span class="term-dot green"></span>
+            </div>
+            <span class="term-title">ytcut · 设置</span>
+          </div>
+          <div class="term-body">
+            <div class="panel focused">
+              <span class="panel-title"> 设置 </span>
+              <div class="row sel" style="margin-bottom: 2px;"><span class="idx">▶ 曲库目录:</span><span class="name">~/Music</span></div>
+              <div class="row" style="margin-bottom: 2px;"><span class="idx">  登录浏览器:</span><span class="name">chrome</span></div>
+              <div class="row" style="margin-bottom: 2px;"><span class="idx">  自动更新:</span><span class="name">auto</span></div>
+              <div class="row"><span class="idx">  音量:</span><span class="name"><span class="p-fill">██████</span><span class="p-empty">░░░░</span>  60%</span></div>
+            </div>
+            <div class="status" style="margin-top: 10px;">Enter: 编辑/切换 · ← →: 调整 · Esc: 关闭</div>
+          </div>
+        </div>
+        <figcaption>设置<span>曲库目录、登录浏览器、自动更新与音量</span></figcaption>
+      </figure>
+
     </div>
   </div>
 </section>
@@ -289,8 +302,8 @@
         <div class="install-card">
           <h4>预编译二进制</h4>
           <p>解压即用：</p>
-          <a class="btn primary" style="font-size: 14px; padding: 8px 16px; margin-bottom: 8px;" href="https://github.com/khoryz666/ytcut/releases/latest">下载最新 Release</a>
-          <span style="display: block; font-size: 13px; color: var(--muted);">Linux (x86-64) 与 Windows (.zip)</span>
+          <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载最新 release</a>
+          <span class="hint">Linux (x86-64) 与 Windows (.exe)</span>
         </div>
         <div class="install-card">
           <h4>Cargo (Rust)</h4>
@@ -304,8 +317,8 @@
         </div>
       </div>
 
-      <div class="section-head" style="margin: 24px auto 16px; text-align: left;">
-        <h3 style="margin: 0; font-size: 20px;">CLI 命令行快速调用</h3>
+      <div class="sub-head">
+        <h3>CLI 命令行快速调用</h3>
       </div>
       <div class="cmd-table-wrap">
         <table class="cmd-table">
