@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ytcut · 终端音乐播放器</title>
-<meta name="description" content="直接保存 YouTube 歌曲为纯音频，随心截取喜爱的片段，在终端中安静播放。">
+<title>ytcut · 在终端里裁剪并播放 YouTube 音频</title>
+<meta name="description" content="把 YouTube 歌曲保存为纯音频，只留你想要的片段，然后在终端里播放。">
 <meta name="theme-color" content="#0f1019">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../style.css">
@@ -14,19 +14,18 @@
   <div class="wrap">
     <a class="brand" href="./">
       <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path fill="#7AA2F7" d="M 22 17 C 22 15.3 23.6 14 25.2 14.4 L 47.4 19.8 C 48.9 20.2 50 21.5 50 23.1 L 50 40.5 C 47.9 39.5 45.3 39 42.5 39 C 36.7 39 32 42.4 32 46.5 C 32 50.6 36.7 54 42.5 54 C 47.8 54 52.2 51.1 52.9 47.4 C 53 46.9 53 41.5 53 22 L 53 21 C 53 19.5 51.8 18.2 50.3 17.8 L 26.5 12 C 24.5 11.5 22 13 22 15.5 Z"/>
-        <ellipse cx="20" cy="46" rx="8" ry="5.5" transform="rotate(-18 20 46)" fill="#7AA2F7" />
-        <rect x="20" y="16" width="3" height="30" fill="#7AA2F7" rx="1.5"/>
-        <path d="M 10 52 C 14 49, 18 55, 23 52 C 28 49, 32 55, 37 52 C 42 49, 46 55, 51 52 C 55 49, 58 53, 62 51" fill="none" stroke="#BB9AF7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <line x1="33" y1="28" x2="25" y2="38" stroke="#BB9AF7" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="23" cy="40" r="2.5" fill="#BB9AF7"/>
-        <circle cx="35" cy="26" r="2.5" fill="#BB9AF7"/>
+        <rect width="64" height="64" rx="15" fill="#0f1019"/>
+        <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#2b3048" stroke-width="1.5"/>
+        <g stroke="#7aa2f7" stroke-width="3.6" stroke-linecap="round" fill="none">
+          <path d="M19 17 L45 45"/>
+          <path d="M45 17 L19 45"/>
+        </g>
+        <circle cx="19" cy="45" r="5.4" fill="#0f1019" stroke="#7aa2f7" stroke-width="3.6"/>
+        <circle cx="45" cy="45" r="5.4" fill="#0f1019" stroke="#7aa2f7" stroke-width="3.6"/>
       </svg>
       ytcut
     </a>
     <nav>
-      <a href="#how">怎么用</a>
-      <a href="#screens">界面</a>
       <a href="#features">功能</a>
       <a href="#install">安装</a>
       <a href="https://github.com/khoryz666/ytcut">GitHub</a>
@@ -38,11 +37,10 @@
 <div class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow">终端音乐播放器 · Rust</span>
-      <h1>保存 YouTube 歌曲，<br><em>只留你心动的那一段。</em></h1>
-      <p class="lead">直接保存为纯音频，随心裁剪起止时间，在终端里安静播放。</p>
+      <h1>在终端里<em>裁剪</em>并播放 YouTube 音频。</h1>
+      <p class="lead">把歌曲保存为纯音频，只留你想要的片段，然后直接播放——无需浏览器，无需图形界面。</p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载 release</a>
+        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载</a>
         <a class="btn ghost" href="https://github.com/khoryz666/ytcut">查看源码</a>
       </div>
     </div>
@@ -54,11 +52,11 @@
           <span class="term-dot yellow"></span>
           <span class="term-dot green"></span>
         </div>
-        <span class="term-title">ytcut — 终端音乐播放器</span>
+        <span class="term-title">ytcut</span>
       </div>
       <div class="term-body">
         <div class="term-head">
-          <span class="wordmark">ytcut v0.4.1</span>
+          <span class="wordmark">ytcut v0.4.3</span>
           <span class="meta">14 首歌曲 · ~/Music</span>
         </div>
 
@@ -93,123 +91,11 @@
   </div>
 </div>
 
-<section id="how">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>怎么用</h2>
-      <p>从一条链接到终端听歌，只需三步。</p>
-    </div>
-    <div class="steps">
-      <div class="step">
-        <span class="num">1</span>
-        <h3>下载即截取</h3>
-        <p>在 <code>/add</code> 填入起止时间（如 1:30），只保存副歌或精选段落。</p>
-      </div>
-      <div class="step">
-        <span class="num">2</span>
-        <h3>终端内播放</h3>
-        <p>上下键选歌，空格播放暂停，Tab 切换队列。无需开网页，极低内存占用。</p>
-      </div>
-      <div class="step">
-        <span class="num">3</span>
-        <h3>后台常驻</h3>
-        <p>输入 <code>/bg</code> 或 <code>--background</code> 转入后台，专注编码与工作。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="screens">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>界面</h2>
-      <p>基于 Ratatui 构建的纯终端交互界面，键盘操作行云流水。</p>
-    </div>
-    <div class="screens">
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · 添加歌曲</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused" style="margin-bottom: 10px;">
-              <span class="panel-title"> 添加 YouTube 音频 </span>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">▶ 链接</span><span class="name">https://youtube.com/watch?v=...</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  命名</span><span class="name">Midnight City (Solo Cut)</span></div>
-              <div class="row"><span class="idx">  截取</span><span class="name"><span style="color: var(--yellow)">01:45</span> → <span style="color: var(--yellow)">02:30</span> · <span style="color: var(--green)">00:45 片段</span></span></div>
-            </div>
-            <div class="row"><span class="idx" style="color: var(--green)">✓ yt-dlp:</span><span class="name" style="color: var(--muted)">正在提取原声流…</span></div>
-            <div class="row" style="margin-top: 2px;"><span class="name"><span class="p-fill">████████████████████</span> 100%</span></div>
-            <div class="status" style="margin-top: 10px;">Enter: 下载 · Tab: 下一字段 · Esc: 取消</div>
-          </div>
-        </div>
-        <figcaption>下载并截取<span>保存前裁掉片头前奏或空白噪音，只留精华</span></figcaption>
-      </figure>
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · 命令面板</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused">
-              <span class="panel-title"> 命令 </span>
-              <div class="pal-row" style="margin-bottom: 2px;"><span class="cmd">/add</span><span class="desc">下载一首歌曲</span></div>
-              <div class="pal-row sel"><span class="cmd">/background</span><span class="desc">转入后台播放 (/bg)</span></div>
-              <div class="pal-row"><span class="cmd">/search</span><span class="desc">过滤曲库</span></div>
-              <div class="pal-row"><span class="cmd">/settings</span><span class="desc">打开设置</span></div>
-              <div class="pal-row"><span class="cmd">/update</span><span class="desc">更新 ytcut</span></div>
-            </div>
-            <div class="status" style="margin-top: 10px;">↑/↓: 选择 · Enter: 执行 · Esc: 关闭</div>
-          </div>
-        </div>
-        <figcaption>命令面板<span>按下 / 即可一键直达所有配置、路径切换与操作</span></figcaption>
-      </figure>
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · 设置</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused">
-              <span class="panel-title"> 设置 </span>
-              <div class="row sel" style="margin-bottom: 2px;"><span class="idx">▶ 曲库目录:</span><span class="name">~/Music</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  登录浏览器:</span><span class="name">chrome</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  自动更新:</span><span class="name">auto</span></div>
-              <div class="row"><span class="idx">  音量:</span><span class="name"><span class="p-fill">██████</span><span class="p-empty">░░░░</span>  60%</span></div>
-            </div>
-            <div class="status" style="margin-top: 10px;">Enter: 编辑/切换 · ← →: 调整 · Esc: 关闭</div>
-          </div>
-        </div>
-        <figcaption>设置<span>曲库目录、登录浏览器、自动更新与音量</span></figcaption>
-      </figure>
-
-    </div>
-  </div>
-</section>
-
 <section id="features">
   <div class="wrap">
     <div class="section-head">
       <h2>功能</h2>
-      <p>为追求专注、讨厌臃肿界面的音乐爱好者量身打造。</p>
+      <p>拿到一首歌、继续手头工作，所需的一切都在这里。</p>
     </div>
     <div class="features">
       <div class="feature">
@@ -223,7 +109,7 @@
         </div>
         <div>
           <h3>下载即截取</h3>
-          <p>填入开始与结束时间点。ytcut 直接提取指定片段，无需后续二次裁剪或重新编码损失音质。</p>
+          <p>在 <code>/add</code> 里填入起止时间，ytcut 只保存该片段——无需重编码，音质无损。</p>
         </div>
       </div>
 
@@ -235,7 +121,7 @@
         </div>
         <div>
           <h3>免配置工具链</h3>
-          <p>首次运行自动拉取 yt-dlp 与 ffmpeg，严格校验 SHA-256 完整性，后续按需自动更新。</p>
+          <p>首次运行自动拉取 yt-dlp 与 ffmpeg，校验 SHA-256，并自动保持更新。</p>
         </div>
       </div>
 
@@ -246,8 +132,8 @@
           </svg>
         </div>
         <div>
-          <h3>后台播放守护</h3>
-          <p>支持 <code>--background</code> 或 <code>/bg</code> 脱离终端在后台运行。随时用 <code>ytcut stop</code> 控制。</p>
+          <h3>后台播放</h3>
+          <p>用 <code>--background</code> 或 <code>/bg</code> 脱离终端运行；用 <code>ytcut stop</code> 停止。</p>
         </div>
       </div>
 
@@ -258,8 +144,8 @@
           </svg>
         </div>
         <div>
-          <h3>浏览器免密凭据</h3>
-          <p>按 <code>o</code> 在 Chrome、Edge 或 Brave 中登录 YouTube，ytcut 自动读取 Cookie，畅享受限音频。</p>
+          <h3>浏览器免密登录</h3>
+          <p>按 <code>o</code> 在 Chrome、Edge 或 Brave 中登录 YouTube，畅听受限音频。</p>
         </div>
       </div>
 
@@ -271,7 +157,7 @@
         </div>
         <div>
           <h3>静默自动更新</h3>
-          <p>补丁版本在每次启动时静默自动安装；当有大版本发布时给出醒目提醒，省心免维护。</p>
+          <p>补丁版本启动时静默安装；小版本与大版本仅提醒你。</p>
         </div>
       </div>
 
@@ -283,7 +169,7 @@
         </div>
         <div>
           <h3>系统级音频路由</h3>
-          <p>完美支持 Linux PulseAudio/PipeWire 与 Windows WASAPI，蓝牙耳机或声卡即插即连。</p>
+          <p>Linux 走 PulseAudio/PipeWire，Windows 走 WASAPI，蓝牙耳机即插即用。</p>
         </div>
       </div>
     </div>
@@ -293,69 +179,66 @@
 <section id="install">
   <div class="wrap">
     <div class="section-head">
-      <h2>安装与快捷命令</h2>
+      <h2>安装</h2>
       <p>几秒内即可在本地快速运行。</p>
     </div>
 
-    <div class="install-tabs">
-      <div class="install-grid">
-        <div class="install-card">
-          <h4>预编译二进制</h4>
-          <p>解压即用：</p>
-          <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载最新 release</a>
-          <span class="hint">Linux (x86-64) 与 Windows (.exe)</span>
-        </div>
-        <div class="install-card">
-          <h4>Cargo (Rust)</h4>
-          <p>使用 Cargo 一键编译安装：</p>
-          <code class="code-snippet">cargo install --git https://github.com/khoryz666/ytcut</code>
-        </div>
-        <div class="install-card">
-          <h4>Nix</h4>
-          <p>通过 Nix flakes 安装：</p>
-          <code class="code-snippet">nix profile install github:khoryz666/ytcut</code>
+    <div class="install">
+      <div class="install-row">
+        <div class="method">预编译</div>
+        <div class="detail">
+          <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">下载</a>
+          <span class="hint">Linux .tar.gz · Windows .exe</span>
         </div>
       </div>
+      <div class="install-row">
+        <div class="method">Cargo</div>
+        <div class="detail"><code>cargo install --git https://github.com/khoryz666/ytcut</code></div>
+      </div>
+      <div class="install-row">
+        <div class="method">Nix</div>
+        <div class="detail"><code>nix profile install github:khoryz666/ytcut</code></div>
+      </div>
+    </div>
 
-      <div class="sub-head">
-        <h3>CLI 命令行快速调用</h3>
-      </div>
-      <div class="cmd-table-wrap">
-        <table class="cmd-table">
-          <thead>
-            <tr>
-              <th>命令</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>ytcut</code></td>
-              <td>打开交互式终端界面（TUI）</td>
-            </tr>
-            <tr>
-              <td><code>ytcut add &lt;URL&gt; [--start 1:30] [--end 2:00]</code></td>
-              <td>直接下载音频，支持指定起止截取时间点</td>
-            </tr>
-            <tr>
-              <td><code>ytcut play [FILES...] [--shuffle] [--background]</code></td>
-              <td>播放指定曲目或当前曲库；--background 可常驻后台</td>
-            </tr>
-            <tr>
-              <td><code>ytcut list</code></td>
-              <td>列出音乐文件夹下的所有歌曲</td>
-            </tr>
-            <tr>
-              <td><code>ytcut stop</code></td>
-              <td>停止常驻在后台的音频播放进程</td>
-            </tr>
-            <tr>
-              <td><code>ytcut update</code></td>
-              <td>更新 yt-dlp 工具链与 ytcut 自身程序</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="sub-head">
+      <h3>CLI 命令行快速调用</h3>
+    </div>
+    <div class="cmd-table-wrap">
+      <table class="cmd-table">
+        <thead>
+          <tr>
+            <th>命令</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ytcut</code></td>
+            <td>打开交互式终端界面（TUI）</td>
+          </tr>
+          <tr>
+            <td><code>ytcut add &lt;URL&gt; [--start 1:30] [--end 2:00]</code></td>
+            <td>直接下载音频，支持指定起止截取时间点</td>
+          </tr>
+          <tr>
+            <td><code>ytcut play [FILES...] [--shuffle] [--background]</code></td>
+            <td>播放指定曲目或当前曲库；--background 可常驻后台</td>
+          </tr>
+          <tr>
+            <td><code>ytcut list</code></td>
+            <td>列出音乐文件夹下的所有歌曲</td>
+          </tr>
+          <tr>
+            <td><code>ytcut stop</code></td>
+            <td>停止常驻在后台的音频播放进程</td>
+          </tr>
+          <tr>
+            <td><code>ytcut update</code></td>
+            <td>更新 yt-dlp 工具链与 ytcut 自身程序</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ytcut · Terminal music player</title>
-<meta name="description" content="Download songs from YouTube as audio, keep the part you like, and play them from your terminal.">
+<title>ytcut · Cut and play YouTube audio from your terminal</title>
+<meta name="description" content="Download a song from YouTube as pure audio, keep only the part you want, and play it back from your terminal.">
 <meta name="theme-color" content="#0f1019">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
@@ -14,19 +14,18 @@
   <div class="wrap">
     <a class="brand" href="./">
       <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path fill="#7AA2F7" d="M 22 17 C 22 15.3 23.6 14 25.2 14.4 L 47.4 19.8 C 48.9 20.2 50 21.5 50 23.1 L 50 40.5 C 47.9 39.5 45.3 39 42.5 39 C 36.7 39 32 42.4 32 46.5 C 32 50.6 36.7 54 42.5 54 C 47.8 54 52.2 51.1 52.9 47.4 C 53 46.9 53 41.5 53 22 L 53 21 C 53 19.5 51.8 18.2 50.3 17.8 L 26.5 12 C 24.5 11.5 22 13 22 15.5 Z"/>
-        <ellipse cx="20" cy="46" rx="8" ry="5.5" transform="rotate(-18 20 46)" fill="#7AA2F7" />
-        <rect x="20" y="16" width="3" height="30" fill="#7AA2F7" rx="1.5"/>
-        <path d="M 10 52 C 14 49, 18 55, 23 52 C 28 49, 32 55, 37 52 C 42 49, 46 55, 51 52 C 55 49, 58 53, 62 51" fill="none" stroke="#BB9AF7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <line x1="33" y1="28" x2="25" y2="38" stroke="#BB9AF7" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="23" cy="40" r="2.5" fill="#BB9AF7"/>
-        <circle cx="35" cy="26" r="2.5" fill="#BB9AF7"/>
+        <rect width="64" height="64" rx="15" fill="#0f1019"/>
+        <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#2b3048" stroke-width="1.5"/>
+        <g stroke="#7aa2f7" stroke-width="3.6" stroke-linecap="round" fill="none">
+          <path d="M19 17 L45 45"/>
+          <path d="M45 17 L19 45"/>
+        </g>
+        <circle cx="19" cy="45" r="5.4" fill="#0f1019" stroke="#7aa2f7" stroke-width="3.6"/>
+        <circle cx="45" cy="45" r="5.4" fill="#0f1019" stroke="#7aa2f7" stroke-width="3.6"/>
       </svg>
       ytcut
     </a>
     <nav>
-      <a href="#how">How it works</a>
-      <a href="#screens">Interface</a>
       <a href="#features">Features</a>
       <a href="#install">Install</a>
       <a href="https://github.com/khoryz666/ytcut">GitHub</a>
@@ -38,11 +37,10 @@
 <div class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow">Terminal music player · Rust</span>
-      <h1>Songs from YouTube.<br><em>Cut to what you love.</em></h1>
-      <p class="lead">Download pure audio, keep the part you like, and play right from your terminal.</p>
+      <h1><em>Cut</em> and play YouTube audio from your terminal.</h1>
+      <p class="lead">Download a song as pure audio, keep only the part you want, and play it back — no browser, no GUI.</p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">Download release</a>
+        <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">Download</a>
         <a class="btn ghost" href="https://github.com/khoryz666/ytcut">View source</a>
       </div>
     </div>
@@ -54,11 +52,11 @@
           <span class="term-dot yellow"></span>
           <span class="term-dot green"></span>
         </div>
-        <span class="term-title">ytcut — terminal music player</span>
+        <span class="term-title">ytcut</span>
       </div>
       <div class="term-body">
         <div class="term-head">
-          <span class="wordmark">ytcut v0.4.1</span>
+          <span class="wordmark">ytcut v0.4.3</span>
           <span class="meta">14 songs · ~/Music</span>
         </div>
 
@@ -93,123 +91,11 @@
   </div>
 </div>
 
-<section id="how">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>How it works</h2>
-      <p>Three steps from link to music in your terminal.</p>
-    </div>
-    <div class="steps">
-      <div class="step">
-        <span class="num">1</span>
-        <h3>Trim on download</h3>
-        <p>Type start and end times in <code>/add</code> to save just the hook, intro, or solo.</p>
-      </div>
-      <div class="step">
-        <span class="num">2</span>
-        <h3>Play in terminal</h3>
-        <p>Arrow keys to pick, Space to play, Tab for queue. No browser tabs, no RAM hogging.</p>
-      </div>
-      <div class="step">
-        <span class="num">3</span>
-        <h3>Detach &amp; work</h3>
-        <p>Send to background with <code>/bg</code> or <code>--background</code>. Focus while audio plays.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="screens">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>Interface</h2>
-      <p>A full-featured TUI built with Ratatui, designed for keyboard efficiency.</p>
-    </div>
-    <div class="screens">
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · Add song</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused" style="margin-bottom: 10px;">
-              <span class="panel-title"> Add from YouTube </span>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">▶ URL</span><span class="name">https://youtube.com/watch?v=...</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  Name</span><span class="name">Midnight City (Solo Cut)</span></div>
-              <div class="row"><span class="idx">  Cut</span><span class="name"><span style="color: var(--yellow)">01:45</span> → <span style="color: var(--yellow)">02:30</span> · <span style="color: var(--green)">00:45 excerpt</span></span></div>
-            </div>
-            <div class="row"><span class="idx" style="color: var(--green)">✓ yt-dlp:</span><span class="name" style="color: var(--muted)">extracting audio stream…</span></div>
-            <div class="row" style="margin-top: 2px;"><span class="name"><span class="p-fill">████████████████████</span> 100%</span></div>
-            <div class="status" style="margin-top: 10px;">Enter: download · Tab: next field · Esc: cancel</div>
-          </div>
-        </div>
-        <figcaption>Trim on download<span>Crop intros, chatter, or silence before saving</span></figcaption>
-      </figure>
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · Command palette</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused">
-              <span class="panel-title"> Command </span>
-              <div class="pal-row" style="margin-bottom: 2px;"><span class="cmd">/add</span><span class="desc">download a song</span></div>
-              <div class="pal-row sel"><span class="cmd">/background</span><span class="desc">play in background (/bg)</span></div>
-              <div class="pal-row"><span class="cmd">/search</span><span class="desc">filter the library</span></div>
-              <div class="pal-row"><span class="cmd">/settings</span><span class="desc">open settings</span></div>
-              <div class="pal-row"><span class="cmd">/update</span><span class="desc">update ytcut</span></div>
-            </div>
-            <div class="status" style="margin-top: 10px;">↑/↓: select · Enter: run · Esc: close</div>
-          </div>
-        </div>
-        <figcaption>Command palette<span>Press / to reach settings, directory switching, and tools</span></figcaption>
-      </figure>
-
-      <figure class="terminal">
-        <div class="term">
-          <div class="term-bar">
-            <div class="term-dots">
-              <span class="term-dot red"></span>
-              <span class="term-dot yellow"></span>
-              <span class="term-dot green"></span>
-            </div>
-            <span class="term-title">ytcut · Settings</span>
-          </div>
-          <div class="term-body">
-            <div class="panel focused">
-              <span class="panel-title"> Settings </span>
-              <div class="row sel" style="margin-bottom: 2px;"><span class="idx">▶ Library folder:</span><span class="name">~/Music</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  Sign-in browser:</span><span class="name">chrome</span></div>
-              <div class="row" style="margin-bottom: 2px;"><span class="idx">  Auto-update:</span><span class="name">auto</span></div>
-              <div class="row"><span class="idx">  Volume:</span><span class="name"><span class="p-fill">██████</span><span class="p-empty">░░░░</span>  60%</span></div>
-            </div>
-            <div class="status" style="margin-top: 10px;">Enter: edit/cycle · ← →: change · Esc: close</div>
-          </div>
-        </div>
-        <figcaption>Settings<span>Library folder, sign-in browser, auto-update, and volume</span></figcaption>
-      </figure>
-
-    </div>
-  </div>
-</section>
-
 <section id="features">
   <div class="wrap">
     <div class="section-head">
       <h2>Features</h2>
-      <p>Built for people who want audio without the friction.</p>
+      <p>Everything you need to grab a track and get back to work.</p>
     </div>
     <div class="features">
       <div class="feature">
@@ -223,7 +109,7 @@
         </div>
         <div>
           <h3>Trim on download</h3>
-          <p>Provide start and end timestamps. ytcut extracts the exact portion cleanly without re-encoding quality loss.</p>
+          <p>Set start and end times in <code>/add</code> and ytcut saves only that range — no re-encode, no quality loss.</p>
         </div>
       </div>
 
@@ -235,7 +121,7 @@
         </div>
         <div>
           <h3>Self-managing tools</h3>
-          <p>On first launch, ytcut fetches yt-dlp and ffmpeg, checks SHA-256 checksums, and keeps them updated automatically.</p>
+          <p>Downloads yt-dlp and ffmpeg on first run, verifies SHA-256 checksums, and keeps them updated.</p>
         </div>
       </div>
 
@@ -247,7 +133,7 @@
         </div>
         <div>
           <h3>Background player</h3>
-          <p>Run headless with <code>--background</code> or <code>/bg</code>. Manage playback with <code>ytcut stop</code> or quick CLI commands.</p>
+          <p>Detach with <code>--background</code> or <code>/bg</code> and keep working while it plays; stop it with <code>ytcut stop</code>.</p>
         </div>
       </div>
 
@@ -259,7 +145,7 @@
         </div>
         <div>
           <h3>Browser cookie sign-in</h3>
-          <p>Press <code>o</code> to sign into YouTube in Chrome, Edge, or Brave. ytcut safely reads cookies for age-restricted tracks.</p>
+          <p>Press <code>o</code> to sign into YouTube in Chrome, Edge, or Brave for age-restricted tracks.</p>
         </div>
       </div>
 
@@ -271,7 +157,7 @@
         </div>
         <div>
           <h3>Silent auto-updates</h3>
-          <p>Patch updates apply silently on startup; notifications alert you when minor or major updates arrive.</p>
+          <p>Patch releases install silently on startup; minor and major releases notify you instead.</p>
         </div>
       </div>
 
@@ -283,7 +169,7 @@
         </div>
         <div>
           <h3>Native audio routing</h3>
-          <p>PulseAudio/PipeWire on Linux and WASAPI on Windows. Bluetooth headphones and default sinks just work.</p>
+          <p>PulseAudio/PipeWire on Linux, WASAPI on Windows. Bluetooth headphones and default sinks just work.</p>
         </div>
       </div>
     </div>
@@ -293,69 +179,66 @@
 <section id="install">
   <div class="wrap">
     <div class="section-head">
-      <h2>Install &amp; quick start</h2>
+      <h2>Install</h2>
       <p>Get ytcut running in seconds.</p>
     </div>
 
-    <div class="install-tabs">
-      <div class="install-grid">
-        <div class="install-card">
-          <h4>Prebuilt binaries</h4>
-          <p>Unpack and run:</p>
-          <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">Latest release</a>
-          <span class="hint">Linux (x86-64) &amp; Windows (.exe)</span>
-        </div>
-        <div class="install-card">
-          <h4>Cargo (Rust)</h4>
-          <p>Build from source with cargo:</p>
-          <code class="code-snippet">cargo install --git https://github.com/khoryz666/ytcut</code>
-        </div>
-        <div class="install-card">
-          <h4>Nix</h4>
-          <p>Install via Nix flakes:</p>
-          <code class="code-snippet">nix profile install github:khoryz666/ytcut</code>
+    <div class="install">
+      <div class="install-row">
+        <div class="method">Prebuilt</div>
+        <div class="detail">
+          <a class="btn primary" href="https://github.com/khoryz666/ytcut/releases/latest">Download</a>
+          <span class="hint">Linux .tar.gz · Windows .exe</span>
         </div>
       </div>
+      <div class="install-row">
+        <div class="method">Cargo</div>
+        <div class="detail"><code>cargo install --git https://github.com/khoryz666/ytcut</code></div>
+      </div>
+      <div class="install-row">
+        <div class="method">Nix</div>
+        <div class="detail"><code>nix profile install github:khoryz666/ytcut</code></div>
+      </div>
+    </div>
 
-      <div class="sub-head">
-        <h3>CLI quick commands</h3>
-      </div>
-      <div class="cmd-table-wrap">
-        <table class="cmd-table">
-          <thead>
-            <tr>
-              <th>Command</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>ytcut</code></td>
-              <td>Open the interactive terminal interface</td>
-            </tr>
-            <tr>
-              <td><code>ytcut add &lt;URL&gt; [--start 1:30] [--end 2:00]</code></td>
-              <td>Download YouTube audio, optionally trimmed to timestamps</td>
-            </tr>
-            <tr>
-              <td><code>ytcut play [FILES...] [--shuffle] [--background]</code></td>
-              <td>Play your library or specific tracks; detach with --background</td>
-            </tr>
-            <tr>
-              <td><code>ytcut list</code></td>
-              <td>List all songs in your library folder</td>
-            </tr>
-            <tr>
-              <td><code>ytcut stop</code></td>
-              <td>Stop the detached background audio player</td>
-            </tr>
-            <tr>
-              <td><code>ytcut update</code></td>
-              <td>Update yt-dlp tools and ytcut itself</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="sub-head">
+      <h3>CLI quick commands</h3>
+    </div>
+    <div class="cmd-table-wrap">
+      <table class="cmd-table">
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ytcut</code></td>
+            <td>Open the interactive terminal interface</td>
+          </tr>
+          <tr>
+            <td><code>ytcut add &lt;URL&gt; [--start 1:30] [--end 2:00]</code></td>
+            <td>Download YouTube audio, optionally trimmed to timestamps</td>
+          </tr>
+          <tr>
+            <td><code>ytcut play [FILES...] [--shuffle] [--background]</code></td>
+            <td>Play your library or specific tracks; detach with --background</td>
+          </tr>
+          <tr>
+            <td><code>ytcut list</code></td>
+            <td>List all songs in your library folder</td>
+          </tr>
+          <tr>
+            <td><code>ytcut stop</code></td>
+            <td>Stop the detached background audio player</td>
+          </tr>
+          <tr>
+            <td><code>ytcut update</code></td>
+            <td>Update yt-dlp tools and ytcut itself</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
